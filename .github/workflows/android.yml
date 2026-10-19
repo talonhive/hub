@@ -1,0 +1,60 @@
+name: android
+# Builds the TalonHive Hub APK on GitHub's servers (Java + Android SDK are preinstalled on ubuntu runners).
+# The Android project is generated fresh from capacitor.config.json + www/ on every build, so the repo holds
+# only our code. Stage 1: an unsigned DEBUG test APK, downloadable from the run's "Artifacts" section.
+on:
+  push:
+    branches: [main]
+    paths: ["www/**", "package.json", "capacitor.config.json", "android-res/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: tests first (never package a broken step detector)
+        run: |
+          for f in www/*.js; do node --input-type=module --check < "$f"; done
+          node test/stepcore.test.mjs
+      - name: install Capacitor (pinned versions)
+        run: npm install --no-audit --no-fund
+      - name: generate the Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+      - name: app icons (our mark, white on black)
+        run: |
+          for d in mipmap-mdpi:48 mipmap-hdpi:72 mipmap-xhdpi:96 mipmap-xxhdpi:144 mipmap-xxxhdpi:192; do
+            dir=android/app/src/main/res/${d%%:*}; mkdir -p "$dir"
+            cp android-res/icon-512.png "$dir/ic_launcher.png"
+            cp android-res/icon-512.png "$dir/ic_launcher_round.png"
+            cp android-res/icon-maskable-512.png "$dir/ic_launcher_foreground.png"
+          done
+          # remove adaptive-icon XML so the PNG icons above are used as-is
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher*.xml
+      - name: build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+      - name: name it and record its checksum
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/talonhive-hub-${GITHUB_SHA::7}-debug.apk"
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talonhive-hub-debug-apk
+          path: dist/
+          retention-days: 14

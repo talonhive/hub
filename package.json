@@ -1,0 +1,19 @@
+{
+  "name": "talonhive-hub",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TalonHive Hub: walk, play and read to mine NACKL (Acki Nacki Bee Engine).",
+  "type": "module",
+  "scripts": {
+    "test": "node test/stepcore.test.mjs",
+    "android:add": "cap add android",
+    "android:sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

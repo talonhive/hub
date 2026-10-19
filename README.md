@@ -45,6 +45,13 @@ node test/stepcore.test.mjs                  # step detector tests
 python -m http.server 8766 --directory www   # then open http://localhost:8766 (phone: use the web preview)
 ```
 
+## Android app (APK)
+
+Built on GitHub's servers by `.github/workflows/android.yml` (Capacitor 8.5.3, pinned): the Android project is
+generated from `capacitor.config.json` + `www/` on every build, so this repo holds only our code.
+Stage 1 produces an unsigned **debug** test APK (Actions → latest "android" run → Artifacts) with its SHA-256.
+Next: all-day step counting via Android's built-in step sensor, then signed releases.
+
 ## Distribution
 
 The Android app will be published as **signed APKs on GitHub Releases** (installable and auto-updatable with
