@@ -23,7 +23,7 @@ export const LIMITS = {
   SHAKE_LOCK_MS: 3000,      // after a violent shake, nothing counts for this long
   PACE_RATIO: 0.75,         // a bump sooner than this x the walker's usual step interval is the same step
   VIBRATION_WINDOW_MS: 2000, // vibration = this many strong bumps within this window...
-  VIBRATION_PEAKS: 7,       // ...(>= 3.5 per second). Walking, even with equal heel + push-off bumps, stays <= ~3/s
+  VIBRATION_PEAKS: 8,       // ...(>= 4 per second). Walking, even with equal heel + push-off bumps, stays <= ~3/s
   SECONDARY_RATIO: 0.8,     // a close peak weaker than this x the step's peak is gait (push-off), not vibration
   THRESHOLD_RATIO: 0.35,    // peaks must reach this x the typical step peak (adapts to hand vs pocket)
 };

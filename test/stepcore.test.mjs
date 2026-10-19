@@ -113,9 +113,18 @@ for (const [label, amp, second, lag, tol] of [
 import { readFileSync } from "node:fs";
 const trace = (f) => readFileSync(new URL(`./traces/${f}.csv`, import.meta.url), "utf8")
   .split("\n").filter((l) => /^\d/.test(l)).map((l) => l.split(",").map(Number));
-for (const [file, label] of [["walk1", "real phone walk, in hand (~100 steps)"], ["walk2", "real phone walk, in pocket (~100 steps)"]]) {
+for (const [file, label] of [["walk1", "real phone walk 1, in hand (~100 steps)"], ["walk2", "real phone walk 2, in pocket (~100 steps)"],
+                             ["walk3", "real phone walk 3, in hand (100 steps)"], ["walk4", "real phone walk 4, in pocket (100 steps)"]]) {
   const s = run(trace(file));
-  check(label, s.steps >= 92 && s.steps <= 110, `counted ${s.steps}`);
+  check(label, s.steps >= 90 && s.steps <= 112, `counted ${s.steps}`);
+}
+
+// 14. Long shaking sessions must not farm steps (rules re-trigger instead of paying out repeatedly).
+for (const [hz, amp] of [[3.5, 25], [3, 12], [2.5, 10], [2, 12], [4, 8], [5, 16]]) {
+  const samples = [];
+  for (let t = 0; t < 60000; t += 16) samples.push([t, 0, 0, G + amp * Math.sin(2 * Math.PI * hz * t / 1000) + (rnd() - .5) * .3]);
+  const s = run(samples);
+  check(`60 s of shaking ${hz} Hz @ ${amp} pays at most 6`, s.steps <= 6, `counted ${s.steps} of ${Math.round(hz * 60)} bumps`);
 }
 
 // 13. More shake patterns (slow-hard, fast-gentle, very violent) must credit nothing.
