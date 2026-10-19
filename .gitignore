@@ -1,0 +1,29 @@
+# ---- Keys and secrets: never commit (APK signing keys included) ----
+*.keys.json
+*.key
+*.pem
+*.seed
+*.phrase
+*mnemonic*
+*.jks
+*.keystore
+keystore.properties
+.env
+.env.*
+!.env.example
+
+# ---- Local / build output ----
+node_modules/
+android/app/build/
+android/.gradle/
+android/build/
+*.apk
+*.aab
+.claude/
+.vscode/
+.idea/
+
+# ---- OS noise ----
+.DS_Store
+Thumbs.db
+desktop.ini

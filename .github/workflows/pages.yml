@@ -1,0 +1,38 @@
+name: pages
+# Publishes www/ to GitHub Pages: https://talonhive.github.io/hub/ (web preview of the Hub)
+on:
+  push:
+    branches: [main]
+    paths: ["www/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: node test/stepcore.test.mjs      # never publish if the step detector tests fail
+      - name: cache-bust
+        run: |
+          V="${GITHUB_SHA::7}"
+          sed -i "s#src=\"\./app\.js\"#src=\"./app.js?v=$V\"#; s#href=\"\./favicon\.svg\"#href=\"./favicon.svg?v=$V\"#; s#href=\"\./manifest\.webmanifest\"#href=\"./manifest.webmanifest?v=$V\"#" www/index.html
+          sed -i "s#from \"\./stepcore\.js\"#from \"./stepcore.js?v=$V\"#; s#from \"\./mark\.js\"#from \"./mark.js?v=$V\"#" www/app.js
+          grep -q "app.js?v=$V" www/index.html && grep -q "stepcore.js?v=$V" www/app.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: www
+      - id: deploy
+        uses: actions/deploy-pages@v4

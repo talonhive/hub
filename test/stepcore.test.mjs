@@ -1,0 +1,88 @@
+// Step detector tests with synthetic accelerometer signals (50 Hz).   node test/stepcore.test.mjs
+import { createStepDetector } from "../www/stepcore.js";
+
+const G = 9.81;
+let fail = 0;
+const check = (name, ok, detail) => { if (!ok) fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${name}  (${detail})`); };
+
+// Deterministic pseudo-random numbers so the tests always give the same result.
+let seed = 42;
+const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+
+/** Simulate a walk: each step is a smooth vertical bump; step intervals jitter like real gait. */
+function walk({ seconds, spm, amp, jitter, noise = 0.25 }) {
+  const samples = [];
+  let t = 0, nextStep = 500, steps = 0;
+  const base = 60000 / spm;
+  while (t < seconds * 1000) {
+    let a = 0;
+    // bump shape around each step time (~200 ms wide)
+    const dt = t - nextStep;
+    if (dt > -100 && dt < 100) a = amp * Math.cos((dt / 100) * (Math.PI / 2)) ** 2;
+    if (dt >= 100) { nextStep += base * (1 + (rnd() * 2 - 1) * jitter); steps++; }
+    samples.push([t, (rnd() - 0.5) * noise, (rnd() - 0.5) * noise, G + a + (rnd() - 0.5) * noise]);
+    t += 20;
+  }
+  return { samples, steps };
+}
+
+function run(samples) {
+  const d = createStepDetector();
+  for (const [t, x, y, z] of samples) d.feed(t, x, y, z);
+  return d.stats();
+}
+
+// 1. Normal walk: 60 s at ~108 steps/min with natural 4% variation.
+{
+  const w = walk({ seconds: 60, spm: 108, amp: 3.5, jitter: 0.04 });
+  const s = run(w.samples);
+  const err = Math.abs(s.steps - w.steps) / w.steps;
+  check("normal walk counted within 5%", err <= 0.05, `real ${w.steps}, counted ${s.steps}, cadence ${s.cadence}`);
+}
+// 2. Brisk walk: 140 steps/min.
+{
+  const w = walk({ seconds: 60, spm: 140, amp: 4.5, jitter: 0.035 });
+  const s = run(w.samples);
+  const err = Math.abs(s.steps - w.steps) / w.steps;
+  check("brisk walk counted within 5%", err <= 0.05, `real ${w.steps}, counted ${s.steps}`);
+}
+// 3. Gentle walk with a weaker signal (phone in a loose pocket).
+{
+  const w = walk({ seconds: 60, spm: 95, amp: 1.8, jitter: 0.05 });
+  const s = run(w.samples);
+  const err = Math.abs(s.steps - w.steps) / w.steps;
+  check("gentle walk counted within 8%", err <= 0.08, `real ${w.steps}, counted ${s.steps}`);
+}
+// 4. Hand shaking: fast (5 Hz) and violent → nothing credited.
+{
+  const samples = [];
+  for (let t = 0; t < 30000; t += 20) samples.push([t, 0, 0, G + 16 * Math.sin(2 * Math.PI * 5 * t / 1000)]);
+  const s = run(samples);
+  check("hand shaking is rejected", s.steps <= 4, `counted ${s.steps}, rejected ${s.rejected}`);
+}
+// 5. Mechanical shaker at a walking pace, perfectly regular → rejected as machine-like.
+{
+  const w = walk({ seconds: 60, spm: 110, amp: 3.5, jitter: 0, noise: 0 });
+  const s = run(w.samples);
+  check("machine-perfect rhythm is rejected", s.steps <= 10, `counted ${s.steps} of ${w.steps}, reason "${s.reason}"`);
+}
+// 6. Phone at rest with sensor noise → zero steps.
+{
+  const samples = [];
+  for (let t = 0; t < 30000; t += 20) samples.push([t, (rnd() - 0.5) * 0.3, (rnd() - 0.5) * 0.3, G + (rnd() - 0.5) * 0.3]);
+  const s = run(samples);
+  check("phone at rest counts nothing", s.steps === 0, `counted ${s.steps}`);
+}
+// 7. A few isolated bumps (phone tapped / put down) → zero steps.
+{
+  const samples = [];
+  for (let t = 0; t < 20000; t += 20) {
+    const bump = [3000, 9000, 15000].some((b) => Math.abs(t - b) < 60) ? 4 : 0;
+    samples.push([t, 0, 0, G + bump]);
+  }
+  const s = run(samples);
+  check("isolated bumps count nothing", s.steps === 0, `counted ${s.steps}`);
+}
+
+console.log(fail ? `\n${fail} FAILED` : "\nall passed");
+process.exit(fail ? 1 : 0);
