@@ -114,7 +114,8 @@ import { readFileSync } from "node:fs";
 const trace = (f) => readFileSync(new URL(`./traces/${f}.csv`, import.meta.url), "utf8")
   .split("\n").filter((l) => /^\d/.test(l)).map((l) => l.split(",").map(Number));
 for (const [file, label] of [["walk1", "real phone walk 1, in hand (~100 steps)"], ["walk2", "real phone walk 2, in pocket (~100 steps)"],
-                             ["walk3", "real phone walk 3, in hand (100 steps)"], ["walk4", "real phone walk 4, in pocket (100 steps)"]]) {
+                             ["walk3", "real phone walk 3, in hand (100 steps)"], ["walk4", "real phone walk 4, in pocket (100 steps)"],
+                             ["walk5", "real phone walk 5, in pocket (100 steps, deployed build)"]]) {
   const s = run(trace(file));
   check(label, s.steps >= 90 && s.steps <= 112, `counted ${s.steps}`);
 }
