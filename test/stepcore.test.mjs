@@ -108,5 +108,23 @@ for (const [label, amp, second, lag, tol] of [
   check(`${label} within ${tol * 100}%`, err <= tol, `real ${w.steps}, counted ${s.steps}`);
 }
 
+// 11-12. REAL phone recordings (Android 10, Chrome, ~59 Hz), ~100-step walks recorded with the app's
+// "Save walk data". Counted 87 (hand) and 7 (pocket) before tuning to real signals.
+import { readFileSync } from "node:fs";
+const trace = (f) => readFileSync(new URL(`./traces/${f}.csv`, import.meta.url), "utf8")
+  .split("\n").filter((l) => /^\d/.test(l)).map((l) => l.split(",").map(Number));
+for (const [file, label] of [["walk1", "real phone walk, in hand (~100 steps)"], ["walk2", "real phone walk, in pocket (~100 steps)"]]) {
+  const s = run(trace(file));
+  check(label, s.steps >= 92 && s.steps <= 110, `counted ${s.steps}`);
+}
+
+// 13. More shake patterns (slow-hard, fast-gentle, very violent) must credit nothing.
+for (const [hz, amp] of [[4, 8], [3.5, 25], [6, 30]]) {
+  const samples = [];
+  for (let t = 0; t < 20000; t += 16) samples.push([t, 0, 0, G + amp * Math.sin(2 * Math.PI * hz * t / 1000)]);
+  const s = run(samples);
+  check(`shaking ${hz} Hz at ${amp} m/s^2 rejected`, s.steps <= 6, `counted ${s.steps}`);
+}
+
 console.log(fail ? `\n${fail} FAILED` : "\nall passed");
 process.exit(fail ? 1 : 0);

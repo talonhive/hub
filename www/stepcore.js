@@ -17,12 +17,14 @@ export const LIMITS = {
   MIN_CADENCE: 50,          // steps per minute
   MAX_CADENCE: 190,
   MIN_INTERVAL_CV: 0.012,   // below this the rhythm is machine-perfect (human gait varies ~2-5%)
-  MAX_PEAK: 14,             // m/s^2 above gravity; walking peaks are ~1.5-7, shaking goes far higher
+  MAX_PEAK: 20,             // m/s^2 above gravity; a phone in a pocket legitimately jolts to ~15-20 on each step
   MIN_PEAK: 0.5,            // m/s^2: below this it is noise / phone at rest
   WINDOW: 10,               // intervals used for the gait checks
   SHAKE_LOCK_MS: 3000,      // after a violent shake, nothing counts for this long
-  MAX_DOUBLE_RATIO: 0.4,    // more than this share of equal-strength close peaks = vibration, not steps
-  SECONDARY_RATIO: 0.7,     // a close peak weaker than this x the step's peak is gait (push-off), not vibration
+  PACE_RATIO: 0.75,         // a bump sooner than this x the walker's usual step interval is the same step
+  VIBRATION_WINDOW_MS: 2000, // vibration = this many strong bumps within this window...
+  VIBRATION_PEAKS: 7,       // ...(>= 3.5 per second). Walking, even with equal heel + push-off bumps, stays <= ~3/s
+  SECONDARY_RATIO: 0.8,     // a close peak weaker than this x the step's peak is gait (push-off), not vibration
   THRESHOLD_RATIO: 0.35,    // peaks must reach this x the typical step peak (adapts to hand vs pocket)
 };
 
@@ -32,7 +34,7 @@ export function createStepDetector(limits = LIMITS) {
   let threshold = L.MIN_PEAK, lastStepT = null, lastStepPeak = 0, stepPeakAvg = 0;
   let streak = [];            // timestamps of the current candidate rhythm
   let lockUntil = -Infinity;  // shake lockout
-  const recentPeaks = [];     // 1 = peak too close to the previous one (double), 0 = normal
+  const strongPeaks = [];     // times of recent bumps at least SECONDARY_RATIO x the typical step peak
   let s0 = 0, t0 = 0, t1 = 0; // the sample before the previous one, for sub-sample peak timing
   const intervals = [];       // accepted intervals (ms), most recent last
   const stats = { steps: 0, rejected: 0, reason: "" };
@@ -52,14 +54,18 @@ export function createStepDetector(limits = LIMITS) {
 
   function onPeak(t, amplitude) {
     if (amplitude > L.MAX_PEAK) { streak = []; lockUntil = t + L.SHAKE_LOCK_MS; stats.rejected++; stats.reason = "shaking"; return false; }
-    const double = lastStepT !== null && t - lastStepT < L.MIN_INTERVAL_MS;
-    // Walking makes a weaker second bump (push-off) right after each heel strike: ignore it quietly.
-    // Shaking/vibration makes equally strong bumps close together: that is what we count as suspicious.
-    if (double && amplitude < L.SECONDARY_RATIO * lastStepPeak) return false;
-    recentPeaks.push(double ? 1 : 0);
-    if (recentPeaks.length > 2 * L.WINDOW) recentPeaks.shift();
-    if (recentPeaks.length >= L.WINDOW && recentPeaks.reduce((a, b) => a + b, 0) / recentPeaks.length > L.MAX_DOUBLE_RATIO) {
-      streak = []; lockUntil = t + L.SHAKE_LOCK_MS; stats.rejected++; stats.reason = "vibration"; return false;
+    const recent = intervals.slice(-L.WINDOW);
+    const usual = recent.length >= 3 ? [...recent].sort((a, b) => a - b)[recent.length >> 1] : 0;   // median step interval
+    const minGap = Math.max(L.MIN_INTERVAL_MS, usual * L.PACE_RATIO);
+    const double = lastStepT !== null && t - lastStepT < minGap;
+    // Vibration/shaking = many strong bumps per second, continuously. Walking produces at most ~3 per
+    // second (heel strike + push-off, sometimes equally strong on some phones), so count the rate.
+    if (!stepPeakAvg || amplitude >= L.SECONDARY_RATIO * stepPeakAvg) {
+      strongPeaks.push(t);
+      while (strongPeaks.length && t - strongPeaks[0] > L.VIBRATION_WINDOW_MS) strongPeaks.shift();
+      if (strongPeaks.length >= L.VIBRATION_PEAKS) {
+        strongPeaks.length = 0; streak = []; lockUntil = t + L.SHAKE_LOCK_MS; stats.rejected++; stats.reason = "vibration"; return false;
+      }
     }
     if (double) return false;                                                         // double peak
     if (t < lockUntil) { streak = []; lastStepT = t; return false; }
