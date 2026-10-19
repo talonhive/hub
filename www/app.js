@@ -97,12 +97,10 @@ function stop() {
 
 $("#w-toggle").addEventListener("click", () => (walking ? stop() : start()));
 $("#w-save").addEventListener("click", () => {
-  const meta = `# TalonHive walk trace v1, steps_counted=${sessionSteps}, ua=${navigator.userAgent.replace(/[,
-]/g, " ")}
-`;
-  const csv = meta + "t_ms,ax,ay,az
-" + trace.map((r) => r.join(",")).join("
-");
+  const NL = String.fromCharCode(10);
+  const ua = navigator.userAgent.split(",").join(" ").split(NL).join(" ");
+  const meta = `# TalonHive walk trace v1, steps_counted=${sessionSteps}, ua=${ua}` + NL;
+  const csv = meta + "t_ms,ax,ay,az" + NL + trace.map((r) => r.join(",")).join(NL);
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: `talonhive-walk-${Date.now()}.csv` });
   document.body.appendChild(a); a.click(); a.remove();
