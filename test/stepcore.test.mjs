@@ -84,5 +84,29 @@ function run(samples) {
   check("isolated bumps count nothing", s.steps === 0, `counted ${s.steps}`);
 }
 
+// 8-10. Realistic gait: each step = heel strike + a weaker push-off bump ~180-200 ms later, 60 Hz sensor
+// (found by a real phone test: 64 of 100 counted before gait-aware double-peak handling).
+function realWalk({ amp, second, lag, seconds = 60, spm = 105 }) {
+  const samples = []; let next = 500, steps = 0; const base = 60000 / spm;
+  for (let t = 0; t < seconds * 1000; t += 16) {
+    let a = 0; const dt = t - next, dt2 = dt - lag;
+    if (dt > -90 && dt < 90) a += amp * Math.cos((dt / 90) * Math.PI / 2) ** 2;
+    if (dt2 > -70 && dt2 < 70) a += amp * second * Math.cos((dt2 / 70) * Math.PI / 2) ** 2;
+    if (dt >= lag + 70) { next += base * (1 + (rnd() * 2 - 1) * 0.05); steps++; }
+    samples.push([t, (rnd() - .5) * .6, (rnd() - .5) * .6, G + a + (rnd() - .5) * .6]);
+  }
+  return { samples, steps };
+}
+for (const [label, amp, second, lag, tol] of [
+  ["real gait, phone in hand", 2.2, 0.55, 180, 0.05],
+  ["real gait, phone in pocket (strong push-off)", 4, 0.6, 200, 0.06],
+  ["real gait, gentle steps", 1.2, 0.5, 170, 0.06],
+]) {
+  const w = realWalk({ amp, second, lag });
+  const s = run(w.samples);
+  const err = Math.abs(s.steps - w.steps) / w.steps;
+  check(`${label} within ${tol * 100}%`, err <= tol, `real ${w.steps}, counted ${s.steps}`);
+}
+
 console.log(fail ? `\n${fail} FAILED` : "\nall passed");
 process.exit(fail ? 1 : 0);

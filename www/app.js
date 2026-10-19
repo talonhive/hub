@@ -27,11 +27,17 @@ function renderToday(n) {
 
 // ---- walk session ----
 let detector = null, walking = false, startedAt = 0, sessionSteps = 0, timer = null, wakeLock = null;
+// Raw readings of the last walk, kept in memory only, so the user can choose to save them for tuning.
+// Timestamps and acceleration only; no location. Capped at ~10 minutes.
+let trace = [];
+const TRACE_MAX = 40000;
 
 function onMotion(e) {
   const a = e.accelerationIncludingGravity;
   if (!a || a.x == null) return;
-  const n = detector.feed(e.timeStamp || performance.now(), a.x, a.y, a.z);
+  const ts = e.timeStamp || performance.now();
+  if (trace.length < TRACE_MAX) trace.push([Math.round(ts), +a.x.toFixed(3), +a.y.toFixed(3), +a.z.toFixed(3)]);
+  const n = detector.feed(ts, a.x, a.y, a.z);
   if (n) { sessionSteps += n; addToday(n); }
 }
 
@@ -53,6 +59,7 @@ async function start() {
     permission = await DeviceMotionEvent.requestPermission().catch(() => "denied");
   }
   detector = createStepDetector();
+  trace = []; $("#w-save").hidden = true;
   sessionSteps = 0; startedAt = Date.now(); walking = true;
   window.addEventListener("devicemotion", onMotion);
   try { wakeLock = await navigator.wakeLock?.request("screen"); } catch { wakeLock = null; }
@@ -81,11 +88,26 @@ function stop() {
   $("#w-toggle").textContent = "Start walk";
   $("#walk-pill").textContent = "Not walking"; $("#walk-pill").className = "pill";
   $("#sensor-pill").textContent = "Sensor off"; $("#sensor-pill").className = "pill";
-  $("#w-reason").textContent = sessionSteps ? `Walk saved: ${sessionSteps.toLocaleString("en-US")} steps.` : "";
+  const st = detector ? detector.stats() : { rejected: 0 };
+  $("#w-reason").textContent = sessionSteps || st.rejected
+    ? `Walk done: ${sessionSteps.toLocaleString("en-US")} steps counted${st.rejected ? `, ${st.rejected} ignored` : ""}.` : "";
+  $("#w-save").hidden = trace.length < 50;
   render();
 }
 
 $("#w-toggle").addEventListener("click", () => (walking ? stop() : start()));
+$("#w-save").addEventListener("click", () => {
+  const meta = `# TalonHive walk trace v1, steps_counted=${sessionSteps}, ua=${navigator.userAgent.replace(/[,
+]/g, " ")}
+`;
+  const csv = meta + "t_ms,ax,ay,az
+" + trace.map((r) => r.join(",")).join("
+");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `talonhive-walk-${Date.now()}.csv` });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+});
 $("#act-walk").addEventListener("click", () => $("#walk").scrollIntoView({ behavior: "smooth" }));
 document.addEventListener("visibilitychange", async () => {   // the screen lock is dropped when hidden
   if (walking && document.visibilityState === "visible") { try { wakeLock = await navigator.wakeLock?.request("screen"); } catch { /* ignore */ } }

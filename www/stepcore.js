@@ -18,16 +18,18 @@ export const LIMITS = {
   MAX_CADENCE: 190,
   MIN_INTERVAL_CV: 0.012,   // below this the rhythm is machine-perfect (human gait varies ~2-5%)
   MAX_PEAK: 14,             // m/s^2 above gravity; walking peaks are ~1.5-7, shaking goes far higher
-  MIN_PEAK: 0.9,            // m/s^2: below this it is noise / phone at rest
+  MIN_PEAK: 0.5,            // m/s^2: below this it is noise / phone at rest
   WINDOW: 10,               // intervals used for the gait checks
   SHAKE_LOCK_MS: 3000,      // after a violent shake, nothing counts for this long
-  MAX_DOUBLE_RATIO: 0.3,    // more than this share of peaks too close together = vibration, not steps
+  MAX_DOUBLE_RATIO: 0.4,    // more than this share of equal-strength close peaks = vibration, not steps
+  SECONDARY_RATIO: 0.7,     // a close peak weaker than this x the step's peak is gait (push-off), not vibration
+  THRESHOLD_RATIO: 0.35,    // peaks must reach this x the typical step peak (adapts to hand vs pocket)
 };
 
 export function createStepDetector(limits = LIMITS) {
   const L = { ...LIMITS, ...limits };
   let gravity = null, smooth = 0, prev = 0, rising = false, peak = 0;
-  let threshold = L.MIN_PEAK, lastStepT = null;
+  let threshold = L.MIN_PEAK, lastStepT = null, lastStepPeak = 0, stepPeakAvg = 0;
   let streak = [];            // timestamps of the current candidate rhythm
   let lockUntil = -Infinity;  // shake lockout
   const recentPeaks = [];     // 1 = peak too close to the previous one (double), 0 = normal
@@ -51,6 +53,9 @@ export function createStepDetector(limits = LIMITS) {
   function onPeak(t, amplitude) {
     if (amplitude > L.MAX_PEAK) { streak = []; lockUntil = t + L.SHAKE_LOCK_MS; stats.rejected++; stats.reason = "shaking"; return false; }
     const double = lastStepT !== null && t - lastStepT < L.MIN_INTERVAL_MS;
+    // Walking makes a weaker second bump (push-off) right after each heel strike: ignore it quietly.
+    // Shaking/vibration makes equally strong bumps close together: that is what we count as suspicious.
+    if (double && amplitude < L.SECONDARY_RATIO * lastStepPeak) return false;
     recentPeaks.push(double ? 1 : 0);
     if (recentPeaks.length > 2 * L.WINDOW) recentPeaks.shift();
     if (recentPeaks.length >= L.WINDOW && recentPeaks.reduce((a, b) => a + b, 0) / recentPeaks.length > L.MAX_DOUBLE_RATIO) {
@@ -62,6 +67,9 @@ export function createStepDetector(limits = LIMITS) {
     if (lastStepT !== null && streak.length) intervals.push(t - lastStepT);
     if (intervals.length > 50) intervals.shift();
     lastStepT = t;
+    lastStepPeak = amplitude;
+    stepPeakAvg = stepPeakAvg ? stepPeakAvg * 0.8 + amplitude * 0.2 : amplitude;
+    threshold = Math.max(L.MIN_PEAK, L.THRESHOLD_RATIO * stepPeakAvg);   // adapt to this walker and phone position
     streak.push(t);
     const g = gaitOk();
     if (!g.ok) { stats.rejected++; stats.reason = g.reason; streak = [t]; return false; }
@@ -91,7 +99,6 @@ export function createStepDetector(limits = LIMITS) {
         const off = den !== 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (s0 - smooth) / den)) : 0;
         const tPeak = t1 + off * (t - t1);
         if (peak >= threshold) credited = onPeak(tPeak, peak) || 0;
-        threshold = Math.max(L.MIN_PEAK, threshold * 0.8 + peak * 0.5 * 0.2);   // adapt to the walker
         peak = 0;
       }
       s0 = prev; t0 = t1; t1 = t;
