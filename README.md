@@ -49,8 +49,14 @@ python -m http.server 8766 --directory www   # then open http://localhost:8766 (
 
 Built on GitHub's servers by `.github/workflows/android.yml` (Capacitor 8.5.3, pinned): the Android project is
 generated from `capacitor.config.json` + `www/` on every build, so this repo holds only our code.
-Stage 1 produces an unsigned **debug** test APK (Actions → latest "android" run → Artifacts) with its SHA-256.
-Next: all-day step counting via Android's built-in step sensor, then signed releases.
+It currently produces an unsigned **debug** test APK (Actions → latest "android" run → Artifacts) with its SHA-256.
+
+**Step counting in the APK** uses Android's hardware step counter (`TYPE_STEP_COUNTER`) through a small native plugin
+(`android-res/java/StepCounterPlugin.java`, permission *Physical activity*): it counts with the screen off, in a pocket,
+and while the app is closed, fully offline. Field test: 100% in hand, a few steps over in a pocket. Phones without the
+sensor (and the website) use the motion detector in `www/stepcore.js`.
+
+Next: signed releases on GitHub Releases, then Bee Engine mining once the app id is issued.
 
 ## Distribution
 
