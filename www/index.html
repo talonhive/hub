@@ -61,6 +61,21 @@
   .warnbox { font-size: 13px; color: #fde68a; background: rgba(251,191,36,.10); border-radius: 12px; padding: 10px 12px; margin-top: 12px; }
   .reason { min-height: 1.4em; font-size: 13px; color: var(--warn); margin-top: 8px; }
   ul.points { padding-left: 18px; margin: 8px 0 0; color: var(--ink-2); font-size: 13.5px; }
+  .meter-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-2); margin: 14px 0 6px; font-variant-numeric: tabular-nums; }
+  .meter { height: 12px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 0; background: var(--paper); border-radius: 99px; transition: width .4s ease; }
+  .meter.full i { background: var(--up); }
+  ol.stages { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 8px; }
+  .stages li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.03); color: var(--ink-3); }
+  .stages li .dot { width: 24px; height: 24px; border-radius: 99px; border: 1.5px solid var(--line); display: grid; place-items: center; font-size: 12px; font-weight: 800; }
+  .stages li b { display: block; font-size: 14px; font-weight: 700; }
+  .stages li small { display: none; font-size: 12.5px; }
+  .stages li.current { background: rgba(255,255,255,.07); color: var(--ink); }
+  .stages li.current small { display: block; color: var(--ink-2); }
+  .stages li.current .dot { border-color: var(--paper); }
+  .stages li.done { color: var(--ink-2); }
+  .stages li.done .dot { background: var(--up); border-color: var(--up); color: #032b12; }
+  .btn[disabled] { opacity: .4; cursor: default; }
   footer { color: var(--ink-3); font-size: 12.5px; padding-top: 24px; padding-bottom: 40px; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
@@ -69,7 +84,7 @@
 <div class="testbar" role="note"><b>Preview.</b> Step counting works now; mining connects once Acki Nacki issues our app id. Test network only.</div>
 <header>
   <div class="brand"><svg class="mark" id="mark" viewBox="0 0 10 10" aria-hidden="true"></svg>TalonHive <small>Hub</small></div>
-  <span class="pill" id="mine-pill">Mining: not connected</span>
+  <a class="pill" id="mine-pill" href="#mining" style="text-decoration:none">Mining: not connected</a>
 </header>
 <main>
   <section class="card" aria-labelledby="today">
@@ -110,9 +125,21 @@
       </ul></details>
   </section>
 
-  <section class="card" aria-labelledby="mining-title">
-    <div class="mine-head"><b id="mining-title" style="color:var(--ink);font-size:16px">Mining</b><span class="pill">Coming soon</span></div>
-    <p class="note" style="margin-top:8px">Each verified step will power NACKL mining through Acki Nacki's <b>Bee Engine</b>, after you connect your Acki Nacki Wallet and allow mining. That switches on once Acki Nacki issues our app id. For now, walks are counted but not yet rewarded.</p>
+  <section class="card" id="mining" aria-labelledby="mining-title">
+    <div class="mine-head"><b id="mining-title" style="color:var(--ink);font-size:16px">Mining</b><span class="pill" id="m-pill">Waiting for app id</span></div>
+    <div class="meter-row"><span>Today's step energy</span><span id="m-count">0 / 10,000</span></div>
+    <div class="meter" role="progressbar" aria-labelledby="m-count" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="m-meter"><i id="m-fill"></i></div>
+    <div class="muted" id="m-cap">Steps up to the daily limit power your miner. Walking more is great, it just doesn't add more.</div>
+    <ol class="stages" id="m-stages"></ol>
+    <button class="btn" id="m-start" disabled>Start mining</button>
+    <div class="reason" id="m-reason" aria-live="polite"></div>
+    <details class="note"><summary>How mining works</summary>
+      <ul class="points">
+        <li>Mining runs on Acki Nacki's <b>Bee Engine</b>. It rewards real activity, and your walking is the activity.</li>
+        <li>NACKL goes straight to your own Acki Nacki Wallet. TalonHive never holds your coins.</li>
+        <li>Your wallet must have ecosystem participation turned on (Acki Nacki asks for this once, in the wallet).</li>
+        <li>Reward amounts are set by Bee Engine, not by TalonHive.</li>
+      </ul></details>
     <div class="warnbox">TalonHive will never ask for your seed phrase or keys. Mining uses separate <b>Mining Keys</b> that you can revoke in your wallet at any time.</div>
   </section>
 </main>

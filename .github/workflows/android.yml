@@ -25,7 +25,7 @@ jobs:
       - name: tests first (never package a broken step detector)
         run: |
           for f in www/*.js; do node --input-type=module --check < "$f"; done
-          node test/stepcore.test.mjs && node test/native-steps.test.mjs
+          node test/stepcore.test.mjs && node test/native-steps.test.mjs && node test/mining.test.mjs
       - name: prepare the Android project
         run: bash tools/android-prepare.sh
       - name: build debug APK

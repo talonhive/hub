@@ -2,6 +2,7 @@
 import { createStepDetector } from "./stepcore.js";
 import { MARK_VIEWBOX, MARK_PATH } from "./mark.js";
 import { getNativeStepCounter, stepsSince } from "./native-steps.js";
+import { MINING, miningState } from "./mining.js";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -18,13 +19,46 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
 function addToday(n) {
   const t = store.get("today", { day: todayKey(), steps: 0 });
   if (t.day !== todayKey()) { t.day = todayKey(); t.steps = 0; }
-  t.steps += n; store.set("today", t); renderToday(t.steps);
+  t.steps += n; store.set("today", t); renderToday(t.steps); renderMining();
 }
 function renderToday(n) {
   $("#today-steps").textContent = n.toLocaleString("en-US");
   $("#today-sub").textContent = n ? `About ${(n * 0.00075).toFixed(2)} km today. Keep going!` : "Start a walk to begin. Steps are counted on your phone. No location is used.";
 }
-{ const t = store.get("today", { day: todayKey(), steps: 0 }); renderToday(t.day === todayKey() ? t.steps : 0); }
+const todaySteps = () => { const t = store.get("today", { day: todayKey(), steps: 0 }); return t.day === todayKey() ? t.steps : 0; };
+renderToday(todaySteps());
+
+// ---- mining panel ----
+// Wallet connection and Mining Keys arrive with the Bee Engine SDK (after the app id); until then they stay false.
+const wallet = { connected: false, keysAllowed: false };
+let mining = false;
+function renderMining() {
+  const m = miningState({ appDappId: MINING.appDappId, walletConnected: wallet.connected, keysAllowed: wallet.keysAllowed,
+    todaySteps: todaySteps(), mining });
+  $("#m-count").textContent = `${m.steps.toLocaleString("en-US")} / ${m.cap.toLocaleString("en-US")}`;
+  $("#m-fill").style.width = `${Math.round(m.energy * 100)}%`;
+  $("#m-meter").setAttribute("aria-valuenow", String(Math.round(m.energy * 100)));
+  $("#m-meter").classList.toggle("full", m.capReached);
+  $("#m-cap").textContent = m.capReached ? "Today's step energy is full. Nice walking!"
+    : "Steps up to the daily limit power your miner. Walking more is great, it just doesn't add more.";
+  const ol = $("#m-stages"); ol.textContent = "";
+  m.stages.forEach((st, i) => {
+    const li = document.createElement("li");
+    li.className = st.done ? "done" : st.current ? "current" : "";
+    const dot = document.createElement("span"); dot.className = "dot"; dot.textContent = st.done ? "✓" : String(i + 1);
+    const txt = document.createElement("div");
+    const b = document.createElement("b"); b.textContent = st.title;
+    const sm = document.createElement("small"); sm.textContent = st.hint;
+    txt.append(b, sm); li.append(dot, txt); ol.append(li);
+  });
+  $("#m-start").disabled = !m.canStart;
+  $("#m-start").textContent = m.status === "mining" ? "Mining…" : "Start mining";
+  $("#m-reason").textContent = m.reason;
+  const label = { waiting: "Waiting for app id", setup: "Set up", ready: "Ready", mining: "Mining" }[m.status];
+  $("#m-pill").textContent = label; $("#m-pill").className = m.status === "mining" || m.canStart ? "pill on" : "pill";
+  $("#mine-pill").textContent = m.status === "mining" ? "Mining: on" : m.status === "waiting" ? "Mining: soon" : "Mining: not connected";
+}
+renderMining();
 
 // ---- hardware step counter (APK) ----
 // When available it is the source of truth: accurate in a pocket with the screen off, and it also counts while

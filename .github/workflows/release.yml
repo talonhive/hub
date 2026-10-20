@@ -24,7 +24,7 @@ jobs:
       - name: tests first
         run: |
           for f in www/*.js; do node --input-type=module --check < "$f"; done
-          node test/stepcore.test.mjs && node test/native-steps.test.mjs
+          node test/stepcore.test.mjs && node test/native-steps.test.mjs && node test/mining.test.mjs
       - name: signing secrets present
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
