@@ -24,4 +24,4 @@ jobs:
           node-version: 22
       - name: syntax-check every app file as an ES module
         run: for f in www/*.js; do node --input-type=module --check < "$f" || { echo "syntax error in $f"; exit 1; }; done
-      - run: node test/stepcore.test.mjs
+      - run: node test/stepcore.test.mjs && node test/native-steps.test.mjs

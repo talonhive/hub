@@ -1,6 +1,7 @@
 // TalonHive Hub — walk sessions on the web/PWA build. Motion is processed here and never sent anywhere.
 import { createStepDetector } from "./stepcore.js";
 import { MARK_VIEWBOX, MARK_PATH } from "./mark.js";
+import { getNativeStepCounter, stepsSince } from "./native-steps.js";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -25,6 +26,37 @@ function renderToday(n) {
 }
 { const t = store.get("today", { day: todayKey(), steps: 0 }); renderToday(t.day === todayKey() ? t.steps : 0); }
 
+// ---- hardware step counter (APK) ----
+// When available it is the source of truth: accurate in a pocket with the screen off, and it also counts while
+// the app is closed (credited to today when the app next opens).
+const SC = getNativeStepCounter();
+let nativeOn = false, nativeListening = false;
+function onHardwareTotal(total) {
+  const hw = store.get("hw", { last: null });
+  const n = stepsSince(hw.last, total);
+  hw.last = total; store.set("hw", hw);
+  if (n > 0) { addToday(n); if (walking && nativeOn) sessionSteps += n; render(); }
+}
+async function startHardware(askPermission) {
+  if (!SC) return false;
+  try {
+    const a = await SC.isAvailable();
+    if (!a.available) return false;
+    if (!a.permission) {
+      if (!askPermission) return false;
+      const p = await SC.ensurePermission();
+      if (!p.granted) { $("#w-reason").textContent = "Allow Physical activity for TalonHive Hub in Android settings to use the step sensor."; return false; }
+    }
+    if (!nativeListening) { await SC.addListener("steps", (d) => onHardwareTotal(d.total)); nativeListening = true; }
+    const r = await SC.start();
+    if (r && r.total >= 0) onHardwareTotal(r.total);
+    nativeOn = true;
+    return true;
+  } catch { return false; }
+}
+// If permission was granted before, start reading the sensor straight away (shows steps taken while closed).
+startHardware(false);
+
 // ---- walk session ----
 let detector = null, walking = false, startedAt = 0, sessionSteps = 0, timer = null, wakeLock = null;
 // Raw readings of the last walk, kept in memory only, so the user can choose to save them for tuning.
@@ -42,7 +74,8 @@ function onMotion(e) {
 }
 
 function render() {
-  const s = detector ? detector.stats() : { steps: 0, cadence: 0, reason: "" };
+  const s = nativeOn ? { cadence: walking ? Math.round(sessionSteps / Math.max(1, (Date.now() - startedAt) / 60000)) : 0, reason: "" }
+    : detector ? detector.stats() : { steps: 0, cadence: 0, reason: "" };
   $("#w-steps").textContent = sessionSteps.toLocaleString("en-US");
   $("#w-cadence").textContent = walking ? s.cadence : 0;
   const sec = walking ? Math.floor((Date.now() - startedAt) / 1000) : 0;
@@ -51,6 +84,18 @@ function render() {
 }
 
 async function start() {
+  // APK: prefer the phone's hardware step counter (works in a pocket with the screen off).
+  if (SC && await startHardware(true)) {
+    sessionSteps = 0; startedAt = Date.now(); walking = true; detector = null; trace = [];
+    $("#w-save").hidden = true;
+    timer = setInterval(render, 1000);
+    $("#w-toggle").textContent = "End walk";
+    $("#walk-pill").textContent = "Walking"; $("#walk-pill").className = "pill on";
+    $("#sensor-pill").textContent = "Step sensor"; $("#sensor-pill").className = "pill on";
+    $("#w-reason").textContent = "Using your phone's step sensor. You can lock the screen and pocket it.";
+    render();
+    return;
+  }
   if (typeof DeviceMotionEvent === "undefined") { $("#w-reason").textContent = "This device has no motion sensor. Try on your phone."; return; }
   // iPhone/iPad: motion access needs a permission prompt from a tap. Some browsers report "denied" without
   // asking yet still deliver events, so we don't trust the answer alone: start, and judge by whether data arrives.
@@ -63,6 +108,7 @@ async function start() {
   sessionSteps = 0; startedAt = Date.now(); walking = true;
   window.addEventListener("devicemotion", onMotion);
   try { wakeLock = await navigator.wakeLock?.request("screen"); } catch { wakeLock = null; }
+  if (SC) SC.keepAwake({ on: true }).catch(() => {});   // APK without a hardware counter: keep the screen on natively
   timer = setInterval(render, 500);
   $("#w-toggle").textContent = "End walk";
   $("#walk-pill").textContent = "Walking"; $("#walk-pill").className = "pill on";
@@ -85,10 +131,11 @@ function stop() {
   window.removeEventListener("devicemotion", onMotion);
   clearInterval(timer);
   wakeLock?.release?.().catch(() => {}); wakeLock = null;
+  if (SC) SC.keepAwake({ on: false }).catch(() => {});
   $("#w-toggle").textContent = "Start walk";
   $("#walk-pill").textContent = "Not walking"; $("#walk-pill").className = "pill";
   $("#sensor-pill").textContent = "Sensor off"; $("#sensor-pill").className = "pill";
-  const st = detector ? detector.stats() : { rejected: 0 };
+  const st = detector && !nativeOn ? detector.stats() : { rejected: 0 };
   $("#w-reason").textContent = sessionSteps || st.rejected
     ? `Walk done: ${sessionSteps.toLocaleString("en-US")} steps counted${st.rejected ? `, ${st.rejected} ignored` : ""}.` : "";
   $("#w-save").hidden = trace.length < 50;

@@ -5,7 +5,7 @@ name: android
 on:
   push:
     branches: [main]
-    paths: ["www/**", "package.json", "capacitor.config.json", "android-res/**", ".github/workflows/android.yml"]
+    paths: ["www/**", "test/**", "package.json", "capacitor.config.json", "android-res/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 permissions:
@@ -26,13 +26,22 @@ jobs:
       - name: tests first (never package a broken step detector)
         run: |
           for f in www/*.js; do node --input-type=module --check < "$f"; done
-          node test/stepcore.test.mjs
+          node test/stepcore.test.mjs && node test/native-steps.test.mjs
       - name: install Capacitor (pinned versions)
         run: npm install --no-audit --no-fund
       - name: generate the Android project
         run: |
           npx cap add android
           npx cap sync android
+      - name: native step counter plugin + permission
+        run: |
+          src=android/app/src/main/java/io/github/talonhive/hub
+          test -d "$src" || { echo "unexpected project layout:"; find android/app/src/main/java; exit 1; }
+          rm -f "$src"/MainActivity.*
+          cp android-res/java/MainActivity.java android-res/java/StepCounterPlugin.java "$src/"
+          m=android/app/src/main/AndroidManifest.xml
+          sed -i 's#<application#<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />\n    <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />\n    <application#' "$m"
+          grep -q ACTIVITY_RECOGNITION "$m" && grep -q "registerPlugin(StepCounterPlugin.class)" "$src/MainActivity.java"
       - name: app icons (our mark, white on black)
         run: |
           for d in mipmap-mdpi:48 mipmap-hdpi:72 mipmap-xhdpi:96 mipmap-xxhdpi:144 mipmap-xxxhdpi:192; do
