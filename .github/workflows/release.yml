@@ -71,4 +71,4 @@ jobs:
           **Verify:** the APK's SHA-256 is in SHA256SUMS.txt; the signing certificate is in SIGNING-CERT.txt and stays the same for every release.
           **Only install TalonHive Hub from this Releases page.** TalonHive never asks for seed phrases or keys.
           EOF
-          gh release create "$GITHUB_REF_NAME" dist/* --title "TalonHive Hub ${GITHUB_REF_NAME}" --notes-file notes.md --prerelease
+          gh release create "$GITHUB_REF_NAME" dist/*.apk dist/*.txt --title "TalonHive Hub ${GITHUB_REF_NAME}" --notes-file notes.md --prerelease

@@ -49,17 +49,21 @@ python -m http.server 8766 --directory www   # then open http://localhost:8766 (
 
 Built on GitHub's servers by `.github/workflows/android.yml` (Capacitor 8.5.3, pinned): the Android project is
 generated from `capacitor.config.json` + `www/` on every build, so this repo holds only our code.
-It currently produces an unsigned **debug** test APK (Actions → latest "android" run → Artifacts) with its SHA-256.
+Every push produces an unsigned **debug** test APK (Actions → latest "android" run → Artifacts) with its SHA-256.
 
 **Step counting in the APK** uses Android's hardware step counter (`TYPE_STEP_COUNTER`) through a small native plugin
 (`android-res/java/StepCounterPlugin.java`, permission *Physical activity*): it counts with the screen off, in a pocket,
 and while the app is closed, fully offline. Field test: 100% in hand, a few steps over in a pocket. Phones without the
 sensor (and the website) use the motion detector in `www/stepcore.js`.
 
-Next: signed releases on GitHub Releases, then Bee Engine mining once the app id is issued.
+Signed public releases come from version tags (`release.yml`). Next: Bee Engine mining once the app id is issued.
 
 ## Distribution
 
-The Android app will be published as **signed APKs on GitHub Releases** (installable and auto-updatable with
+**Download:** https://github.com/talonhive/hub/releases (latest: v0.1.0, test-network preview).
+Releases are signed with the TalonHive key; its certificate SHA-256 is
+`773de2fca6b4bd945332f7da947cf868fc1512f1c2374e5cead7ce133051fe20` and stays the same for every release.
+
+The Android app is published as **signed APKs on GitHub Releases** (installable and auto-updatable with
 Obtainium). It won't be on Google Play, whose policies don't allow on-device mining. **Only install TalonHive from
 this repository's Releases page.**
