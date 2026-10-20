@@ -1,11 +1,10 @@
 name: android
-# Builds the TalonHive Hub APK on GitHub's servers (Java + Android SDK are preinstalled on ubuntu runners).
-# The Android project is generated fresh from capacitor.config.json + www/ on every build, so the repo holds
-# only our code. Stage 1: an unsigned DEBUG test APK, downloadable from the run's "Artifacts" section.
+# Debug test APK on every relevant push (Java + Android SDK are preinstalled on ubuntu runners).
+# Download: the run's "Artifacts" section. Signed public builds come from release.yml (version tags).
 on:
   push:
     branches: [main]
-    paths: ["www/**", "test/**", "package.json", "capacitor.config.json", "android-res/**", ".github/workflows/android.yml"]
+    paths: ["www/**", "test/**", "package.json", "capacitor.config.json", "android-res/**", "tools/android-prepare.sh", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 permissions:
@@ -27,36 +26,10 @@ jobs:
         run: |
           for f in www/*.js; do node --input-type=module --check < "$f"; done
           node test/stepcore.test.mjs && node test/native-steps.test.mjs
-      - name: install Capacitor (pinned versions)
-        run: npm install --no-audit --no-fund
-      - name: generate the Android project
-        run: |
-          npx cap add android
-          npx cap sync android
-      - name: native step counter plugin + permission
-        run: |
-          src=android/app/src/main/java/io/github/talonhive/hub
-          test -d "$src" || { echo "unexpected project layout:"; find android/app/src/main/java; exit 1; }
-          rm -f "$src"/MainActivity.*
-          cp android-res/java/MainActivity.java android-res/java/StepCounterPlugin.java "$src/"
-          m=android/app/src/main/AndroidManifest.xml
-          sed -i 's#<application#<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />\n    <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />\n    <application#' "$m"
-          grep -q ACTIVITY_RECOGNITION "$m" && grep -q "registerPlugin(StepCounterPlugin.class)" "$src/MainActivity.java"
-      - name: app icons (our mark, white on black)
-        run: |
-          for d in mipmap-mdpi:48 mipmap-hdpi:72 mipmap-xhdpi:96 mipmap-xxhdpi:144 mipmap-xxxhdpi:192; do
-            dir=android/app/src/main/res/${d%%:*}; mkdir -p "$dir"
-            cp android-res/icon-512.png "$dir/ic_launcher.png"
-            cp android-res/icon-512.png "$dir/ic_launcher_round.png"
-            cp android-res/icon-maskable-512.png "$dir/ic_launcher_foreground.png"
-          done
-          # remove adaptive-icon XML so the PNG icons above are used as-is
-          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher*.xml
+      - name: prepare the Android project
+        run: bash tools/android-prepare.sh
       - name: build debug APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+        run: cd android && ./gradlew --no-daemon assembleDebug
       - name: name it and record its checksum
         run: |
           mkdir -p dist

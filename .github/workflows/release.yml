@@ -1,0 +1,74 @@
+name: release
+# Signed APK + GitHub Release, triggered by pushing a version tag:   git tag v0.1.0 && git push origin v0.1.0
+# The signing key lives only in the repo's encrypted secrets (ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS). It is written to a temp file for the signing step and deleted right after.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: tests first
+        run: |
+          for f in www/*.js; do node --input-type=module --check < "$f"; done
+          node test/stepcore.test.mjs && node test/native-steps.test.mjs
+      - name: signing secrets present
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ] || { echo "Add the 3 signing secrets in Settings -> Secrets and variables -> Actions"; exit 1; }
+      - name: prepare the Android project
+        run: bash tools/android-prepare.sh
+      - name: version from the tag
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          sed -i -E "s/versionCode [0-9]+/versionCode ${GITHUB_RUN_NUMBER}/; s/versionName \"[^\"]*\"/versionName \"${V}\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+      - name: build release APK (unsigned)
+        run: cd android && ./gradlew --no-daemon assembleRelease
+      - name: align, sign and verify
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          ks="$RUNNER_TEMP/release.p12"
+          echo "$KS_B64" | base64 -d > "$ks"
+          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          mkdir -p dist
+          out="dist/talonhive-hub-${GITHUB_REF_NAME}.apk"
+          "$BT/apksigner" sign --ks "$ks" --ks-type PKCS12 --ks-key-alias "$KS_ALIAS" --ks-pass env:KS_PASS --out "$out" "$RUNNER_TEMP/aligned.apk"
+          rm -f "$ks"
+          "$BT/apksigner" verify --print-certs "$out" | grep -E "certificate (DN|SHA-256 digest)" | tee dist/SIGNING-CERT.txt
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<EOF
+          **TalonHive Hub ${GITHUB_REF_NAME}** (test network preview)
+
+          Walk to mine: steps from your phone's hardware step counter, so it works in a pocket with the screen off and offline.
+          Mining switches on once Acki Nacki issues our Bee Engine app id.
+
+          **Install:** download the .apk below on your Android phone, open it and allow installing from this source.
+          **Verify:** the APK's SHA-256 is in SHA256SUMS.txt; the signing certificate is in SIGNING-CERT.txt and stays the same for every release.
+          **Only install TalonHive Hub from this Releases page.** TalonHive never asks for seed phrases or keys.
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/* --title "TalonHive Hub ${GITHUB_REF_NAME}" --notes-file notes.md --prerelease

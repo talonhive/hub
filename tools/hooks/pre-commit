@@ -16,7 +16,7 @@ while IFS= read -r f; do
   base=${f##*/}
   case "$base" in
     .env.example) ;;
-    *.keys.json|*.key|*.pem|*.seed|*.phrase|*mnemonic*|.env|.env.*|tvm-cli.conf.json) block "file not allowed in the repo: $f" ;;
+    *.keys.json|*.key|*.pem|*.p12|*.pfx|*.jks|*.keystore|keystore-base64.txt|*.seed|*.phrase|*mnemonic*|.env|.env.*|tvm-cli.conf.json) block "file not allowed in the repo: $f" ;;
   esac
 done <<< "$staged"
 
