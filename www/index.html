@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
-<!-- Code only from this site; data only to the Shellnet API. Motion sensors are read locally, never sent. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://shellnet.ackinacki.org; base-uri 'none'; form-action 'none'; object-src 'none'">
+<!-- Code only from this site (Bee Engine's WebAssembly is served from here too); data only to the Shellnet API.
+     Motion sensors are read locally; only step taps for mining go to the chain, never raw motion. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://shellnet.ackinacki.org wss://shellnet.ackinacki.org; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="./favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
@@ -23,6 +24,7 @@
   :root { color-scheme: dark; --bg: #000; --card: #0d0d0d; --line: rgba(255,255,255,.10); --ink: #f5f5f5; --ink-2: #bdbdbd; --ink-3: #8a8a8a;
     --paper: #fff; --paper-ink: #0a0a0a; --up: #4ade80; --down: #fb7185; --warn: #fbbf24; --num: "Manrope", system-ui, sans-serif; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--num); -webkit-font-smoothing: antialiased; }
   button { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 10px; }
@@ -76,12 +78,16 @@
   .stages li.done { color: var(--ink-2); }
   .stages li.done .dot { background: var(--up); border-color: var(--up); color: #032b12; }
   .btn[disabled] { opacity: .4; cursor: default; }
+  .linkbtn { display: block; text-align: center; text-decoration: none; margin-top: 10px; }
+  #m-collect { margin-top: 10px; }
+  #m-wallet { margin-bottom: 10px; }
+  .linkish { display: block; margin: 12px auto 0; background: none; border: 0; color: var(--ink-3); font-size: 13px; text-decoration: underline; cursor: pointer; }
   footer { color: var(--ink-3); font-size: 12.5px; padding-top: 24px; padding-bottom: 40px; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="testbar" role="note"><b>Preview.</b> Step counting works now; mining connects once Acki Nacki issues our app id. Test network only.</div>
+<div class="testbar" role="note"><b>Test network.</b> Mining runs on Acki Nacki Shellnet and pays test NACKL, not real coins.</div>
 <header>
   <div class="brand"><svg class="mark" id="mark" viewBox="0 0 10 10" aria-hidden="true"></svg>TalonHive <small>Hub</small></div>
   <a class="pill" id="mine-pill" href="#mining" style="text-decoration:none">Mining: not connected</a>
@@ -131,14 +137,25 @@
     <div class="meter" role="progressbar" aria-labelledby="m-count" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="m-meter"><i id="m-fill"></i></div>
     <div class="muted" id="m-cap">Steps up to the daily limit power your miner. Walking more is great, it just doesn't add more.</div>
     <ol class="stages" id="m-stages"></ol>
+    <div class="muted" id="m-wallet" hidden></div>
     <button class="btn" id="m-start" disabled>Start mining</button>
+    <a class="btn ghost linkbtn" id="m-link" href="#" target="_blank" rel="noopener" hidden>Open Acki Nacki Wallet</a>
     <div class="reason" id="m-reason" aria-live="polite"></div>
+    <div class="stats" id="m-stats" hidden>
+      <div><b id="ms-taps">0</b><span>steps mined now</span></div>
+      <div><b id="ms-sessions">0</b><span>sessions sent</span></div>
+      <div><b id="ms-chain">–</b><span>activity on chain</span></div>
+    </div>
+    <button class="btn ghost" id="m-collect" hidden>Collect rewards to my wallet</button>
+    <button class="linkish" id="m-disconnect" hidden>Disconnect wallet from this phone</button>
     <details class="note"><summary>How mining works</summary>
       <ul class="points">
         <li>Mining runs on Acki Nacki's <b>Bee Engine</b>. It rewards real activity, and your walking is the activity.</li>
         <li>NACKL goes straight to your own Acki Nacki Wallet. TalonHive never holds your coins.</li>
         <li>Your wallet must have ecosystem participation turned on (Acki Nacki asks for this once, in the wallet).</li>
         <li>Reward amounts are set by Bee Engine, not by TalonHive.</li>
+        <li>Keep the app open while mining: sessions are computed on your phone and the screen stays on.</li>
+        <li>Only step counts go to the chain as mining taps. Raw motion and location never leave your phone.</li>
       </ul></details>
     <div class="warnbox">TalonHive will never ask for your seed phrase or keys. Mining uses separate <b>Mining Keys</b> that you can revoke in your wallet at any time.</div>
   </section>

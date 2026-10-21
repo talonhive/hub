@@ -8,3 +8,4 @@
 *.yml  text eol=lf
 *.py   text eol=lf
 tools/hooks/* text eol=lf
+*.wasm binary

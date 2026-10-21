@@ -1,0 +1,7 @@
+# Secret scanning config (picked up automatically by gitleaks in CI).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Third-party Bee Engine SDK, vendored unmodified from npm (compiled code, no TalonHive secrets)"
+paths = ['''www/vendor/bee-sdk-[0-9.]+/''']

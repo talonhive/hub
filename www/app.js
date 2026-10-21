@@ -2,7 +2,8 @@
 import { createStepDetector } from "./stepcore.js";
 import { MARK_VIEWBOX, MARK_PATH } from "./mark.js";
 import { getNativeStepCounter, stepsSince } from "./native-steps.js";
-import { MINING, miningState } from "./mining.js";
+import { MINING, miningState, tapsAllowed } from "./mining.js";
+import * as bee from "./bee.js";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -19,6 +20,7 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
 function addToday(n) {
   const t = store.get("today", { day: todayKey(), steps: 0 });
   if (t.day !== todayKey()) { t.day = todayKey(); t.steps = 0; }
+  if (bee.isMining()) mineSteps(tapsAllowed(t.steps, n));
   t.steps += n; store.set("today", t); renderToday(t.steps); renderMining();
 }
 function renderToday(n) {
@@ -29,11 +31,20 @@ const todaySteps = () => { const t = store.get("today", { day: todayKey(), steps
 renderToday(todaySteps());
 
 // ---- mining panel ----
-// Wallet connection and Mining Keys arrive with the Bee Engine SDK (after the app id); until then they stay false.
-const wallet = { connected: false, keysAllowed: false };
-let mining = false;
+// Setup (wallet, Mining Keys) and sessions are in bee.js. Mining runs only during a walk; each verified step
+// becomes one Bee Engine tap, up to the daily cap.
+let mining = false, busy = false, connecting = false, connectRun = 0, minedNow = 0, sessions = 0, chainTaps = null;
+const say = (t) => { $("#m-reason").textContent = t; };
+function showLink(url) { const a = $("#m-link"); if (url) { a.href = url; a.hidden = false; } else { a.hidden = true; a.removeAttribute("href"); } }
+function mineSteps(n) {
+  if (n <= 0) { if (todaySteps() >= MINING.dailyStepCap) stopMiningUi("Today's step energy is used up. Mining continues tomorrow."); return; }
+  const cad = walking && startedAt ? sessionSteps / Math.max(1 / 60, (Date.now() - startedAt) / 60000) : 0;
+  minedNow += bee.addSteps(n, cad);
+}
+
 function renderMining() {
-  const m = miningState({ appDappId: MINING.appDappId, walletConnected: wallet.connected, keysAllowed: wallet.keysAllowed,
+  const conn = bee.connection(), keys = bee.miningKeys();
+  const m = miningState({ appDappId: MINING.appDappId, walletConnected: !!conn, keysAllowed: !!(keys && keys.ready),
     todaySteps: todaySteps(), mining });
   $("#m-count").textContent = `${m.steps.toLocaleString("en-US")} / ${m.cap.toLocaleString("en-US")}`;
   $("#m-fill").style.width = `${Math.round(m.energy * 100)}%`;
@@ -51,14 +62,113 @@ function renderMining() {
     const sm = document.createElement("small"); sm.textContent = st.hint;
     txt.append(b, sm); li.append(dot, txt); ol.append(li);
   });
-  $("#m-start").disabled = !m.canStart;
-  $("#m-start").textContent = m.status === "mining" ? "Mining…" : "Start mining";
-  $("#m-reason").textContent = m.reason;
+  $("#m-wallet").hidden = !conn;
+  if (conn) $("#m-wallet").textContent = `Wallet: ${conn.walletName}`;
+  const btn = $("#m-start");
+  const current = m.stages.find((x) => x.current)?.id;
+  btn.textContent = mining ? "Stop mining" : current === "wallet" ? "Connect wallet" : current === "keys" ? "Allow mining" : "Start mining";
+  btn.disabled = busy || (!mining && current !== "wallet" && current !== "keys" && !m.canStart);
+  if (connecting) { btn.textContent = "Cancel"; btn.disabled = false; }
+  if (!busy && !mining) say(m.reason);
+  $("#m-stats").hidden = !(keys && keys.ready);
+  $("#ms-taps").textContent = minedNow.toLocaleString("en-US");
+  $("#ms-sessions").textContent = String(sessions);
+  $("#ms-chain").textContent = chainTaps == null ? "–" : Number(chainTaps).toLocaleString("en-US");
+  $("#m-collect").hidden = !(keys && keys.ready);
+  $("#m-collect").disabled = busy;
+  $("#m-disconnect").hidden = !conn || busy;
   const label = { waiting: "Waiting for app id", setup: "Set up", ready: "Ready", mining: "Mining" }[m.status];
   $("#m-pill").textContent = label; $("#m-pill").className = m.status === "mining" || m.canStart ? "pill on" : "pill";
-  $("#mine-pill").textContent = m.status === "mining" ? "Mining: on" : m.status === "waiting" ? "Mining: soon" : "Mining: not connected";
+  $("#mine-pill").textContent = m.status === "mining" ? "Mining: on" : m.status === "ready" ? "Mining: ready" : "Mining: set up";
 }
+
+const errText = (e) => { const t = (e && e.message) || String(e); return t.length > 160 ? t.slice(0, 160) + "…" : t; };
+
+async function doConnect() {
+  const run = ++connectRun;
+  busy = true; connecting = true; renderMining();
+  say("Opening a connection…");
+  try {
+    await bee.connectWallet((link) => { showLink(link); say("Tap Open Acki Nacki Wallet below and approve TalonHive Hub, then come back here."); });
+    say("Wallet connected.");
+  } catch (e) {
+    if (errText(e) !== "cancelled") say(`Couldn't connect: ${errText(e)}. Try again.`);
+  } finally { if (run === connectRun) { busy = false; connecting = false; showLink(null); renderMining(); } }
+}
+
+async function doAllow() {
+  busy = true; renderMining();
+  say("Asking your wallet to allow mining…");
+  try {
+    await bee.allowMining((link) => showLink(link), (t) => say(t));
+    say("Mining Keys are live. You're ready to mine!");
+  } catch (e) { say(`Mining Keys not confirmed: ${errText(e)}. Try Allow mining again.`); }
+  finally { busy = false; showLink(null); renderMining(); }
+}
+
+function onBee(ev) {
+  if (ev.type === "status" && ev.status === "computing") { sessions++; say("Mining. Keep walking with the app open."); }
+  if (ev.type === "status" && ev.status === "submitting") say("Sending your mining session to the network…");
+  if (ev.type === "error") say(`Mining note: ${ev.message.slice(0, 140)}`);
+  renderMining();
+}
+
+async function startMiningUi() {
+  busy = true; renderMining(); say("Starting the miner…");
+  try {
+    await bee.startMining(onBee);
+    mining = true;
+    if (!walking) await start();
+    if (SC) SC.keepAwake({ on: true }).catch(() => {});
+    say("Mining. Keep walking with the app open.");
+  } catch (e) { bee.stopMining(); mining = false; say(`Couldn't start mining: ${errText(e)}`); }
+  finally { busy = false; renderMining(); }
+}
+function stopMiningUi(msg) {
+  if (!mining) return;
+  bee.stopMining(); mining = false;
+  if (SC && nativeOn) SC.keepAwake({ on: false }).catch(() => {});
+  renderMining();
+  say(msg || `Mining stopped. ${minedNow.toLocaleString("en-US")} steps mined this time.`);
+  refreshChain();
+}
+async function refreshChain() {
+  const k = bee.miningKeys();
+  if (!k || !k.ready) return;
+  const st = await bee.minerStats();
+  if (st) { chainTaps = st.tapSum; $("#ms-chain").textContent = Number(chainTaps).toLocaleString("en-US"); }
+}
+
+$("#m-start").addEventListener("click", () => {
+  const conn = bee.connection(), keys = bee.miningKeys();
+  if (connecting) { bee.cancelConnect(); connectRun++; connecting = false; busy = false; showLink(null); renderMining(); say("Cancelled."); }
+  else if (mining) stopMiningUi();
+  else if (!conn) doConnect();
+  else if (!keys || !keys.ready) doAllow();
+  else startMiningUi();
+});
+$("#m-collect").addEventListener("click", async () => {
+  busy = true; renderMining(); say("Asking the miner to send your rewards to your wallet…");
+  try { await bee.collectRewards(); say("Done. Rewards appear in your Acki Nacki Wallet shortly."); }
+  catch (e) { say(`Couldn't collect yet: ${errText(e)}`); }
+  finally { busy = false; renderMining(); }
+});
+$("#m-disconnect").addEventListener("click", () => {
+  stopMiningUi(); bee.disconnect(); minedNow = 0; sessions = 0; chainTaps = null;
+  renderMining();
+  say("Disconnected on this phone. To fully revoke the Mining Keys, remove them in your Acki Nacki Wallet.");
+});
 renderMining();
+// Keys requested before the app was closed: keep waiting for them.
+{
+  const k = bee.miningKeys();
+  if (k && !k.ready) {
+    busy = true; renderMining();
+    bee.resumeKeys(say).then(() => say("Mining Keys are live. You're ready to mine!"))
+      .catch((e) => say(`Mining Keys not confirmed yet: ${errText(e)}. Try Allow mining again.`))
+      .finally(() => { busy = false; renderMining(); });
+  } else if (k) refreshChain();
+}
 
 // ---- hardware step counter (APK) ----
 // When available it is the source of truth: accurate in a pocket with the screen off, and it also counts while
@@ -161,6 +271,7 @@ let gotMotion = false;
 window.addEventListener("devicemotion", (e) => { if (e.accelerationIncludingGravity?.x != null) gotMotion = true; });
 
 function stop() {
+  stopMiningUi();
   walking = false;
   window.removeEventListener("devicemotion", onMotion);
   clearInterval(timer);

@@ -6,7 +6,7 @@
 Part of **TalonHive**, alongside [TalonHive Swap](https://github.com/talonhive/talonhive).
 
 > **Status: preview.** Walk sessions and on-device step counting work now (web preview:
-> https://talonhive.github.io/hub/). Mining switches on once Acki Nacki issues our Bee Engine app id.
+> https://talonhive.github.io/hub/). Mining runs on the Acki Nacki test network (Shellnet) with our Bee Engine app id `0x…0037`.
 > Shellnet / test network only. The Android APK is next.
 
 ## What it does
@@ -56,7 +56,7 @@ Every push produces an unsigned **debug** test APK (Actions → latest "android"
 and while the app is closed, fully offline. Field test: 100% in hand, a few steps over in a pocket. Phones without the
 sensor (and the website) use the motion detector in `www/stepcore.js`.
 
-Signed public releases come from version tags (`release.yml`). Next: Bee Engine mining once the app id is issued.
+Signed public releases come from version tags (`release.yml`).
 
 ## Distribution
 
@@ -67,3 +67,8 @@ Releases are signed with the TalonHive key; its certificate SHA-256 is
 The Android app is published as **signed APKs on GitHub Releases** (installable and auto-updatable with
 Obtainium). It won't be on Google Play, whose policies don't allow on-device mining. **Only install TalonHive from
 this repository's Releases page.**
+
+## Licence
+
+TalonHive Hub is licensed under the **GNU AGPL-3.0** (see LICENSE.md), because it bundles Acki Nacki's Bee Engine
+SDK (AGPL-3.0, github.com/gosh-sh/bee-engine), vendored unmodified in `www/vendor/bee-sdk-6.0.0/`.
