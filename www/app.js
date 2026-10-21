@@ -2,7 +2,7 @@
 import { createStepDetector } from "./stepcore.js";
 import { MARK_VIEWBOX, MARK_PATH } from "./mark.js";
 import { getNativeStepCounter, stepsSince } from "./native-steps.js";
-import { MINING, miningState, tapsAllowed } from "./mining.js";
+import { MINING, miningState, limitTaps, useTaps } from "./mining.js";
 import * as bee from "./bee.js";
 
 const $ = (s) => document.querySelector(s);
@@ -20,7 +20,7 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
 function addToday(n) {
   const t = store.get("today", { day: todayKey(), steps: 0 });
   if (t.day !== todayKey()) { t.day = todayKey(); t.steps = 0; }
-  if (bee.isMining()) mineSteps(tapsAllowed(t.steps, n));
+  if (bee.isMining()) mineSteps(n);
   t.steps += n; store.set("today", t); renderToday(t.steps); renderMining();
 }
 function renderToday(n) {
@@ -36,22 +36,29 @@ renderToday(todaySteps());
 let mining = false, busy = false, connecting = false, connectRun = 0, minedNow = 0, sessions = 0, chainTaps = null;
 const say = (t) => { $("#m-reason").textContent = t; };
 function showLink(url) { const a = $("#m-link"); if (url) { a.href = url; a.hidden = false; } else { a.hidden = true; a.removeAttribute("href"); } }
+// Daily cap and speed limit (mining.js limitTaps); the mined count is saved per day on this device.
+// The Miner contract enforces its own rules on chain too.
+const minedToday = () => { const m = store.get("mined", null); return m && m.day === todayKey() ? m.mined : 0; };
 function mineSteps(n) {
-  if (n <= 0) { if (todaySteps() >= MINING.dailyStepCap) stopMiningUi("Today's step energy is used up. Mining continues tomorrow."); return; }
+  const r = limitTaps(store.get("mined", null), n, Date.now(), todayKey());
   const cad = walking && startedAt ? sessionSteps / Math.max(1 / 60, (Date.now() - startedAt) / 60000) : 0;
-  minedNow += bee.addSteps(n, cad);
+  const ok = r.allowed ? bee.addSteps(r.allowed, cad) : 0;
+  const st = useTaps(r.state, ok);
+  store.set("mined", st);
+  minedNow += ok;
+  if (st.mined >= MINING.dailyStepCap) stopMiningUi("You've mined today's 10,000 steps. Mining continues tomorrow.");
 }
 
 function renderMining() {
   const conn = bee.connection(), keys = bee.miningKeys();
   const m = miningState({ appDappId: MINING.appDappId, walletConnected: !!conn, keysAllowed: !!(keys && keys.ready),
-    todaySteps: todaySteps(), mining });
+    minedToday: minedToday(), mining });
   $("#m-count").textContent = `${m.steps.toLocaleString("en-US")} / ${m.cap.toLocaleString("en-US")}`;
   $("#m-fill").style.width = `${Math.round(m.energy * 100)}%`;
   $("#m-meter").setAttribute("aria-valuenow", String(Math.round(m.energy * 100)));
   $("#m-meter").classList.toggle("full", m.capReached);
-  $("#m-cap").textContent = m.capReached ? "Today's step energy is full. Nice walking!"
-    : "Steps up to the daily limit power your miner. Walking more is great, it just doesn't add more.";
+  $("#m-cap").textContent = m.capReached ? "Today's mining is complete. Nice walking!"
+    : `Up to ${m.cap.toLocaleString("en-US")} steps a day can be mined, at up to ${MINING.maxStepsPerMin} steps a minute. Walking more is great, it just doesn't add more.`;
   const ol = $("#m-stages"); ol.textContent = "";
   m.stages.forEach((st, i) => {
     const li = document.createElement("li");

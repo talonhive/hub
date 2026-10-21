@@ -5,14 +5,29 @@
 export const MINING = {
   appDappId: "0x0000000000000000000000000000000000000000000000000000000000000037",  // issued by Acki Nacki (GOSH) for TalonHive Hub
   endpoints: ["https://shellnet.ackinacki.org"],   // test network first, as GOSH asked
-  dailyStepCap: 10000,    // steps per day that count toward mining; walking more is fine, it just doesn't add more
+  dailyStepCap: 10000,    // steps per day that can be mined; walking more is fine, it just doesn't add more
+  maxStepsPerMin: 200,    // fastest real walking/running cadence; faster bursts (e.g. a batch of steps from the
+  burstSteps: 30,         //   hardware counter after the app was closed) are not mined. burst = short catch-up allowance
   sessionMs: 30000,       // one Bee Engine session; sessions run back to back while you walk
 };
 
-/** How many of n new steps may become mining taps, given today's steps before them. */
-export function tapsAllowed(todayBefore, n, cap = MINING.dailyStepCap) {
-  const before = Math.max(0, Math.floor(Number(todayBefore) || 0));
-  return Math.max(0, Math.min(Math.floor(Number(n) || 0), cap - before));
+/**
+ * Daily cap + speed limit for mining taps. state = { day, mined, tokens, at } (saved per device) or null.
+ * Returns how many of n new steps may be mined now, and the refreshed state; after sending the taps,
+ * record the number actually accepted with useTaps(state, k).
+ */
+export function limitTaps(state, n, nowMs, day, cfg = MINING) {
+  const s = state && state.day === day ? { ...state } : { day, mined: 0, tokens: cfg.burstSteps, at: nowMs };
+  const elapsed = Math.max(0, nowMs - s.at);              // a clock moved backwards refills nothing
+  s.tokens = Math.min(cfg.burstSteps, s.tokens + elapsed * cfg.maxStepsPerMin / 60000);
+  s.at = Math.max(s.at, nowMs);
+  const want = Math.max(0, Math.floor(Number(n) || 0));
+  const allowed = Math.max(0, Math.min(want, cfg.dailyStepCap - s.mined, Math.floor(s.tokens)));
+  return { allowed, state: s };
+}
+export function useTaps(state, k) {
+  const used = Math.max(0, Math.floor(Number(k) || 0));
+  return { ...state, mined: state.mined + used, tokens: Math.max(0, state.tokens - used) };
 }
 
 /** Steps that count toward mining today (capped). */
@@ -36,10 +51,10 @@ export const STAGES = [
 
 /**
  * Where the user is and whether mining can start.
- * s = { appDappId, walletConnected, keysAllowed, todaySteps, mining }
+ * s = { appDappId, walletConnected, keysAllowed, minedToday, mining }
  */
 export function miningState(s, cfg = MINING) {
-  const steps = countedSteps(s.todaySteps, cfg.dailyStepCap);
+  const steps = countedSteps(s.minedToday, cfg.dailyStepCap);
   const done = {
     app: !!s.appDappId,
     wallet: !!s.appDappId && !!s.walletConnected,
@@ -53,7 +68,7 @@ export function miningState(s, cfg = MINING) {
   if (!done.app) reason = "Mining switches on once Acki Nacki issues our app id.";
   else if (!done.wallet) reason = "Connect your wallet to start.";
   else if (!done.keys) reason = "Allow mining in your wallet to start.";
-  else if (capReached) reason = "Today's step energy is used up. Mining continues tomorrow.";
+  else if (capReached) reason = "You've mined today's 10,000 steps. Mining continues tomorrow.";
 
   const status = s.mining ? "mining" : !done.app ? "waiting" : current === "walk" ? "ready" : "setup";
   return {
