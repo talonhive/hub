@@ -194,7 +194,8 @@ export async function collectRewards() { const m = await getMiner(); await retry
 /** On-chain activity counters of the miner ({ tapSum, tapSum5m }) or null. */
 export async function minerStats() {
   try {
-    const d = await (await getMiner()).get_miner_data();
+    const m = await getMiner();
+    const d = await retrying(() => m.get_miner_data(), { untilMs: 15000 });
     const r = { tapSum: d.tap_sum.toString(), tapSum5m: d.tap_sum_5m.toString() };
     d.free();
     return r;

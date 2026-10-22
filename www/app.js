@@ -40,7 +40,7 @@ renderToday(todaySteps());
 // ---- mining panel ----
 // Setup (wallet, Mining Keys) and sessions are in bee.js. Mining runs only during a walk; each verified step
 // becomes one Bee Engine tap, up to the daily cap.
-let mining = false, busy = false, connecting = false, connectRun = 0, minedNow = 0, sessions = 0, chainTaps = null;
+let mining = false, busy = false, connecting = false, connectRun = 0, minedNow = 0, sessions = 0, accepted = 0, rejected = 0, chainTaps = null;
 let note = "";   // last explicit message (result or error); shown instead of the default hint until the next action
 const say = (t) => { note = t; $("#m-reason").textContent = t; };
 function showLink(url) { const a = $("#m-link"); if (url) { a.href = url; a.hidden = false; } else { a.hidden = true; a.removeAttribute("href"); } }
@@ -87,7 +87,7 @@ function renderMining() {
   if (!busy && !mining) $("#m-reason").textContent = note || m.reason;
   $("#m-stats").hidden = !(keys && keys.ready);
   $("#ms-taps").textContent = minedNow.toLocaleString("en-US");
-  $("#ms-sessions").textContent = String(sessions);
+  $("#ms-sessions").textContent = `${accepted}/${sessions}`;
   $("#ms-chain").textContent = chainTaps == null ? "–" : Number(chainTaps).toLocaleString("en-US");
   $("#m-collect").hidden = !(keys && keys.ready);
   $("#m-collect").disabled = busy;
@@ -124,6 +124,8 @@ async function doAllow() {
 function onBee(ev) {
   if (ev.type === "status" && ev.status === "computing") { sessions++; say("Mining. Keep walking with the app open."); }
   if (ev.type === "status" && ev.status === "submitting") say("Sending your mining session to the network…");
+  if (ev.type === "session_accepted") { accepted++; say("Mining round accepted by the network. Keep walking!"); refreshChain(); }
+  if (ev.type === "session_rejected") { rejected++; say("The network rejected a mining round (it happens if a round had too little walking). Keep going."); }
   if (ev.type === "error") say(`Mining note: ${ev.message.slice(0, 140)}`);
   renderMining();
 }
@@ -166,11 +168,16 @@ $("#m-start").addEventListener("click", () => {
 $("#m-collect").addEventListener("click", async () => {
   busy = true; renderMining(); say("Asking the miner to send your rewards to your wallet…");
   try { await bee.collectRewards(); say("Done. Rewards appear in your Acki Nacki Wallet shortly."); }
-  catch (e) { say(`Couldn't collect yet: ${errText(e)}`); }
+  catch (e) {
+    console.warn("collect", e);
+    say(/621|get reward/i.test(errText(e))
+      ? "Nothing to collect yet: the network didn't accept the claim. Rewards build up over time, so try again after more mining (for example in an hour)."
+      : `Couldn't collect yet: ${errText(e)}`);
+  }
   finally { busy = false; renderMining(); }
 });
 $("#m-disconnect").addEventListener("click", () => {
-  stopMiningUi(); bee.disconnect(); minedNow = 0; sessions = 0; chainTaps = null;
+  stopMiningUi(); bee.disconnect(); minedNow = 0; sessions = 0; accepted = 0; rejected = 0; chainTaps = null;
   renderMining();
   say("Disconnected on this phone. To fully revoke the Mining Keys, remove them in your Acki Nacki Wallet.");
 });
