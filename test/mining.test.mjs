@@ -1,5 +1,5 @@
 // Tests for the mining panel logic (setup stages, daily cap, when mining may start).   node test/mining.test.mjs
-import { miningState, countedSteps, limitTaps, useTaps, MINING } from "../www/mining.js";
+import { miningState, countedSteps, limitTaps, useTaps, pickNetwork, MINING } from "../www/mining.js";
 let fail = 0;
 const eq = (name, want, got) => { const ok = want === got; if (!ok) fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${name}  (${got})`); };
 const cfg = { ...MINING, dailyStepCap: 10000, maxStepsPerMin: 200, burstSteps: 30 };

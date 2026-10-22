@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#000000">
 <!-- Code only from this site (Bee Engine's WebAssembly is served from here too); data only to the Shellnet API.
      Motion sensors are read locally; only step taps for mining go to the chain, never raw motion. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://shellnet.ackinacki.org wss://shellnet.ackinacki.org; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://shellnet.ackinacki.org wss://shellnet.ackinacki.org https://mainnet.ackinacki.org wss://mainnet.ackinacki.org; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="./favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
@@ -30,6 +30,8 @@
   :focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 10px; }
   .testbar { position: sticky; top: 0; z-index: 20; text-align: center; font-size: 13px; padding: 8px 16px; background: var(--warn); color: #1f1400; }
   .testbar b { font-weight: 800; }
+  .testbar.real { background: #dc2626; color: #fff; }
+  .testbar.real a { color: #fff; font-weight: 700; }
   header, main, footer { max-width: 560px; margin: 0 auto; padding: 0 16px; }
   header { display: flex; align-items: center; justify-content: space-between; padding-top: max(18px, env(safe-area-inset-top)); padding-bottom: 6px; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -.02em; }
@@ -87,7 +89,7 @@
 </style>
 </head>
 <body>
-<div class="testbar" role="note"><b>Test network.</b> Mining runs on Acki Nacki Shellnet and pays test NACKL, not real coins.</div>
+<div class="testbar" id="netbar" role="note"><b>Test network.</b> Mining runs on Acki Nacki Shellnet and pays test NACKL, not real coins.</div>
 <header>
   <div class="brand"><svg class="mark" id="mark" viewBox="0 0 10 10" aria-hidden="true"></svg>TalonHive <small>Hub</small></div>
   <a class="pill" id="mine-pill" href="#mining" style="text-decoration:none">Mining: not connected</a>

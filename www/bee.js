@@ -2,17 +2,28 @@
 // (github.com/gosh-sh/bee-engine, examples/javascript/miner-react). The SDK (~9 MB) loads only when the user
 // connects or mines. TalonHive never sees the wallet's seed phrase or keys: the wallet approves a connection,
 // then approves separate Mining Keys that can only mine and can be revoked in the wallet.
-import { MINING } from "./mining.js";
+import { MINING, pickNetwork } from "./mining.js";
 
 const SDK_DIR = "./vendor/bee-sdk-6.0.0/";
-const EP = MINING.endpoints;
+// Network: Shellnet unless this device opted into the private mainnet mode (?net=mainnet, see mining.js).
+let savedNet = null;
+try { savedNet = localStorage.getItem("th:net"); } catch { /* private mode */ }
+const picked = pickNetwork(typeof location !== "undefined" ? location.search : "", savedNet);
+if (picked.save) {
+  try { localStorage.setItem("th:net", picked.save); } catch { /* private mode */ }
+  try { history.replaceState(null, "", location.pathname + location.hash); } catch { /* ignore */ }   // keep the link private
+}
+export const NET = picked.net;
+const EP = NET.endpoints;
 const APP = MINING.appDappId;
 const CLIENT = { network: { endpoints: EP } };
 
-// Kept on this device only. The Mining Keys secret can only mine for this app and is revocable in the wallet.
+// Kept on this device only, separately per network. The Mining Keys secret can only mine for this app and is
+// revocable in the wallet.
+const prefix = NET.name === "shellnet" ? "th:bee:" : `th:bee:${NET.name}:`;
 const store = {
-  get(k) { try { return JSON.parse(localStorage.getItem("th:bee:" + k) || "null"); } catch { return null; } },
-  set(k, v) { try { v == null ? localStorage.removeItem("th:bee:" + k) : localStorage.setItem("th:bee:" + k, JSON.stringify(v)); } catch { /* private mode */ } },
+  get(k) { try { return JSON.parse(localStorage.getItem(prefix + k) || "null"); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(prefix + k) : localStorage.setItem(prefix + k, JSON.stringify(v)); } catch { /* private mode */ } },
 };
 
 let sdkP = null;
@@ -39,6 +50,20 @@ export const miningKeys = () => {
   return k && c && k.walletName === c.walletName && k.appId === APP ? k : null;
 };
 
+// The network API sometimes answers "502 Bad Gateway" (seen on mainnet ~half the time), which the SDK reports
+// as an error. Retry through those blips until a deadline instead of failing the whole step.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function retrying(fn, { untilMs = 30000, everyMs = 2000, stillWanted = () => true } = {}) {
+  const deadline = Date.now() + untilMs;
+  for (;;) {
+    try { return await fn(); } catch (e) {
+      if (!stillWanted()) throw new Error("cancelled");
+      if (Date.now() + everyMs > deadline) throw e;
+      await sleep(everyMs);
+    }
+  }
+}
+
 let connectToken = 0;
 /** Step 1: connect the wallet. onLink(deepLink) is called first, so the page can show "Open wallet". */
 export async function connectWallet(onLink) {
@@ -47,7 +72,8 @@ export async function connectWallet(onLink) {
   const bc = new sdk.BeeConnect();
   const s = bc.create_shared_key_session(APP, 300, null);
   onLink(s.deep_link);
-  const hello = await bc.wait_wallet_hello(EP, s.session_id, s.description, s.client_dh_secret, s.created_at, 150, 2000);
+  const hello = await retrying(() => bc.wait_wallet_hello(EP, s.session_id, s.description, s.client_dh_secret, s.created_at, 150, 2000),
+    { untilMs: 300000, stillWanted: () => token === connectToken });
   if (token !== connectToken) throw new Error("cancelled");
   const conn = {
     appId: APP, walletName: hello.wallet_name, walletAddress: hello.wallet_address, profileAddress: hello.profile_address,
@@ -65,7 +91,7 @@ export async function allowMining(onLink, onStatus) {
   if (!conn) throw new Error("Connect your wallet first.");
   const gen = await sdk.gen_mining_keys(APP);
   const bc = new sdk.BeeConnect();
-  const req = await bc.request_set_mining_keys(EP, conn.sessionId, conn.description, conn.sessionStateJson, APP, gen.public, 30, 1000);
+  const req = await retrying(() => bc.request_set_mining_keys(EP, conn.sessionId, conn.description, conn.sessionStateJson, APP, gen.public, 30, 1000));
   if (req.updated_session_state_json) { conn.sessionStateJson = req.updated_session_state_json; store.set("conn", conn); }
   const rec = { appId: APP, walletName: conn.walletName, ownerPublic: gen.public, ownerSecret: gen.secret, minerAddress: null, ready: false };
   store.set("keys", rec);
@@ -82,13 +108,13 @@ export async function resumeKeys(onStatus) {
 }
 
 async function waitKeysReady(sdk, rec, onStatus) {
-  rec.minerAddress = await sdk.get_miner_address_by_wallet_name({ client_config: CLIENT, wallet_name: rec.walletName });
+  rec.minerAddress = await retrying(() => sdk.get_miner_address_by_wallet_name({ client_config: CLIENT, wallet_name: rec.walletName }));
   store.set("keys", rec);
   onStatus("Waiting for the network to confirm your Mining Keys…");
-  await sdk.ensure_mining_keys_propagated({
+  await retrying(() => sdk.ensure_mining_keys_propagated({
     client_config: CLIENT, miner_address: rec.minerAddress, app_id: APP, expected_owner_public: rec.ownerPublic,
     max_attempts: 150, interval_ms: 2000,
-  });
+  }), { untilMs: 300000 });
   rec.ready = true;
   store.set("keys", rec);
   return rec;
@@ -112,7 +138,7 @@ async function getMiner() {
   const k = miningKeys();
   if (!k || !k.ready) throw new Error("Mining Keys are not ready yet.");
   const sdk = await loadSdk();
-  miner = await sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret);
+  miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret));
   return miner;
 }
 
@@ -163,7 +189,7 @@ export function addSteps(n, cadence) {
 }
 
 /** Ask the miner contract to pay out accumulated rewards to the wallet. */
-export async function collectRewards() { await (await getMiner()).get_reward(); }
+export async function collectRewards() { const m = await getMiner(); await retrying(() => m.get_reward()); }
 
 /** On-chain activity counters of the miner ({ tapSum, tapSum5m }) or null. */
 export async function minerStats() {

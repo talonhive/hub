@@ -11,6 +11,13 @@ const store = {
   set(k, v) { try { localStorage.setItem("th:" + k, JSON.stringify(v)); } catch { /* private mode */ } },
 };
 
+// Private mainnet mode (this device only): make it impossible to miss.
+if (bee.NET.real) {
+  const bar = $("#netbar");
+  bar.className = "testbar real";
+  bar.innerHTML = '<b>MAINNET – real NACKL.</b> Private test mode on this phone. <a href="?net=shellnet">Switch back to test network</a>';
+}
+
 // Brand mark (white on black).
 $("#mark").setAttribute("viewBox", MARK_VIEWBOX);
 $("#mark").innerHTML = `<path fill="#fff" fill-rule="evenodd" d="${MARK_PATH}"/>`;
@@ -34,7 +41,8 @@ renderToday(todaySteps());
 // Setup (wallet, Mining Keys) and sessions are in bee.js. Mining runs only during a walk; each verified step
 // becomes one Bee Engine tap, up to the daily cap.
 let mining = false, busy = false, connecting = false, connectRun = 0, minedNow = 0, sessions = 0, chainTaps = null;
-const say = (t) => { $("#m-reason").textContent = t; };
+let note = "";   // last explicit message (result or error); shown instead of the default hint until the next action
+const say = (t) => { note = t; $("#m-reason").textContent = t; };
 function showLink(url) { const a = $("#m-link"); if (url) { a.href = url; a.hidden = false; } else { a.hidden = true; a.removeAttribute("href"); } }
 // Daily cap and speed limit (mining.js limitTaps); the mined count is saved per day on this device.
 // The Miner contract enforces its own rules on chain too.
@@ -76,7 +84,7 @@ function renderMining() {
   btn.textContent = mining ? "Stop mining" : current === "wallet" ? "Connect wallet" : current === "keys" ? "Allow mining" : "Start mining";
   btn.disabled = busy || (!mining && current !== "wallet" && current !== "keys" && !m.canStart);
   if (connecting) { btn.textContent = "Cancel"; btn.disabled = false; }
-  if (!busy && !mining) say(m.reason);
+  if (!busy && !mining) $("#m-reason").textContent = note || m.reason;
   $("#m-stats").hidden = !(keys && keys.ready);
   $("#ms-taps").textContent = minedNow.toLocaleString("en-US");
   $("#ms-sessions").textContent = String(sessions);
@@ -147,6 +155,7 @@ async function refreshChain() {
 }
 
 $("#m-start").addEventListener("click", () => {
+  note = "";
   const conn = bee.connection(), keys = bee.miningKeys();
   if (connecting) { bee.cancelConnect(); connectRun++; connecting = false; busy = false; showLink(null); renderMining(); say("Cancelled."); }
   else if (mining) stopMiningUi();

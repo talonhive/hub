@@ -4,12 +4,26 @@
 
 export const MINING = {
   appDappId: "0x0000000000000000000000000000000000000000000000000000000000000037",  // issued by Acki Nacki (GOSH) for TalonHive Hub
-  endpoints: ["https://shellnet.ackinacki.org"],   // test network first, as GOSH asked
+  endpoints: ["https://shellnet.ackinacki.org"],   // default network (overridden by the private mainnet mode)
   dailyStepCap: 10000,    // steps per day that can be mined; walking more is fine, it just doesn't add more
   maxStepsPerMin: 200,    // fastest real walking/running cadence; faster bursts (e.g. a batch of steps from the
   burstSteps: 30,         //   hardware counter after the app was closed) are not mined. burst = short catch-up allowance
   sessionMs: 30000,       // one Bee Engine session; sessions run back to back while you walk
 };
+
+// Networks. The public Hub uses Shellnet; opening it with ?net=mainnet switches THIS device to mainnet
+// (real NACKL) for private testing, and ?net=shellnet switches back. Same app id on both (GOSH).
+export const NETWORKS = {
+  shellnet: { name: "shellnet", endpoints: ["https://shellnet.ackinacki.org"], real: false },
+  mainnet:  { name: "mainnet",  endpoints: ["https://mainnet.ackinacki.org"],  real: true },
+};
+/** Network to use, from the page's query string and the saved choice. Returns { net, save } (save: value to store). */
+export function pickNetwork(search, saved) {
+  const q = /(?:^|[?&])net=([a-z]+)/.exec(String(search || ""));
+  const asked = q && NETWORKS[q[1]] ? q[1] : null;
+  if (asked) return { net: NETWORKS[asked], save: asked };
+  return { net: NETWORKS[saved] || NETWORKS.shellnet, save: null };
+}
 
 /**
  * Daily cap + speed limit for mining taps. state = { day, mined, tokens, at } (saved per device) or null.
