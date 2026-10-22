@@ -132,18 +132,42 @@ export function disconnect() {
 // one tap in the running session. Steps between sessions (a second or two) are not mined.
 let miner = null, on = false, computing = false, loop = null, taps = 0, onEvent = () => {};
 
+// Support log: raw miner callbacks and SDK console errors (no keys, no session secrets), so problems can be
+// reported to GOSH exactly as the SDK says them. Kept in memory only; copied by the user from the panel.
+const log = [];
+let tapsLogged = 0, consoleHooked = false;
+function logLine(line) {
+  log.push(`${new Date().toISOString().slice(11, 19)} ${String(line).slice(0, 600)}`);
+  if (log.length > 400) log.shift();
+}
+function hookConsole() {
+  if (consoleHooked) return;
+  consoleHooked = true;
+  const orig = console.error.bind(console);
+  console.error = (...a) => { logLine("console.error " + a.map((x) => (x && x.message) || String(x)).join(" ")); orig(...a); };
+}
+export function miningLog() {
+  const k = miningKeys();
+  return [`TalonHive Hub mining log`, `bee-sdk 6.0.0 (npm, unmodified) | network ${NET.name} | endpoint ${EP.join(",")}`,
+    `app_id ${APP} | miner ${k?.minerAddress || "-"} | wallet ${k?.walletName || "-"} | session ${MINING.sessionMs} ms`,
+    `taps sent this page load: ${tapsLogged}`, ``, ...log].join(String.fromCharCode(10));
+}
+
 async function getMiner() {
   if (miner) return miner;
+  hookConsole();
   const k = miningKeys();
   if (!k || !k.ready) throw new Error("Mining Keys are not ready yet.");
   const sdk = await loadSdk();
   miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret));
+  logLine(`Miner.new ok (${k.minerAddress})`);
   return miner;
 }
 
 function onMinerMessage(msg) {
   let p = null;
-  try { p = JSON.parse(msg); } catch { return; }
+  try { p = JSON.parse(msg); } catch { logLine("callback (not JSON) " + msg); return; }
+  if (p.action !== "tap_computed") logLine("callback " + msg);   // per-tap callbacks are only counted
   if (p.error) onEvent({ type: "error", message: String(p.error) });
   if (p.action === "status_updated" && p.data && p.data.status) {
     const st = p.data.status;
@@ -162,7 +186,8 @@ export async function startMining(listener) {
   on = true;
   const tick = () => {
     if (!on || computing) return;
-    try { if (m.can_start()) { m.start(MINING.sessionMs, onMinerMessage); computing = true; } } catch (e) { onEvent({ type: "error", message: e.message || String(e) }); }
+    try { if (m.can_start()) { logLine(`Miner.start(${MINING.sessionMs})`); m.start(MINING.sessionMs, onMinerMessage); computing = true; } }
+    catch (e) { logLine("start error " + (e.message || e)); onEvent({ type: "error", message: e.message || String(e) }); }
   };
   tick();
   clearInterval(loop);
@@ -182,13 +207,18 @@ export function addSteps(n, cadence) {
   if (!on || !computing || !miner) return 0;
   let ok = 0;
   for (let i = 0; i < n; i++) {
-    try { taps++; miner.add_tap(taps % 1000000, Math.max(0, Math.round(cadence || 0))); ok++; } catch { break; }
+    try { taps++; miner.add_tap(taps % 1000000, Math.max(0, Math.round(cadence || 0))); ok++; tapsLogged++; }
+    catch (e) { logLine("add_tap error " + (e.message || e)); break; }
   }
   return ok;
 }
 
 /** Ask the miner contract to pay out accumulated rewards to the wallet. */
-export async function collectRewards() { const m = await getMiner(); await retrying(() => m.get_reward()); }
+export async function collectRewards() {
+  const m = await getMiner();
+  try { await retrying(() => m.get_reward()); logLine("get_reward ok"); }
+  catch (e) { logLine("get_reward error " + (e.message || e)); throw e; }
+}
 
 /** On-chain activity counters of the miner ({ tapSum, tapSum5m }) or null. */
 export async function minerStats() {

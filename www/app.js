@@ -92,6 +92,7 @@ function renderMining() {
   $("#m-collect").hidden = !(keys && keys.ready);
   $("#m-collect").disabled = busy;
   $("#m-disconnect").hidden = !conn || busy;
+  $("#m-log").hidden = !(keys && keys.ready);
   const label = { waiting: "Waiting for app id", setup: "Set up", ready: "Ready", mining: "Mining" }[m.status];
   $("#m-pill").textContent = label; $("#m-pill").className = m.status === "mining" || m.canStart ? "pill on" : "pill";
   $("#mine-pill").textContent = m.status === "mining" ? "Mining: on" : m.status === "ready" ? "Mining: ready" : "Mining: set up";
@@ -208,6 +209,16 @@ $("#m-collect").addEventListener("click", async () => {
       : `Couldn't collect yet: ${errText(e)}`);
   }
   finally { busy = false; renderMining(); }
+});
+$("#m-log").addEventListener("click", async () => {
+  const text = bee.miningLog();
+  try { await navigator.clipboard.writeText(text); say("Mining log copied. Paste it into your message to support."); }
+  catch {
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `talonhive-mining-log-${Date.now()}.txt` });
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+    say("Mining log saved as a file (copy wasn't allowed).");
+  }
 });
 $("#m-disconnect").addEventListener("click", () => {
   stopMiningUi(); bee.disconnect(); minedNow = 0; sessions = 0; accepted = 0; rejected = 0; chainTaps = null;
