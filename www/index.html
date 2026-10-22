@@ -84,6 +84,13 @@
   #m-collect { margin-top: 10px; }
   #m-wallet { margin-bottom: 10px; }
   .linkish { display: block; margin: 12px auto 0; background: none; border: 0; color: var(--ink-3); font-size: 13px; text-decoration: underline; cursor: pointer; }
+  dialog#m-dialog { width: min(420px, calc(100vw - 32px)); background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 22px; padding: 22px 20px 16px; }
+  dialog#m-dialog::backdrop { background: rgba(0,0,0,.72); }
+  .md-step { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--up); }
+  #md-title { font-size: 20px; margin: 6px 0 6px; letter-spacing: -.01em; }
+  #md-body { color: var(--ink-2); font-size: 14px; margin: 0 0 12px; }
+  .md-list { margin: 0 0 16px; padding-left: 20px; color: var(--ink-2); font-size: 14px; display: grid; gap: 8px; }
+  .md-list b { color: var(--ink); }
   footer { color: var(--ink-3); font-size: 12.5px; padding-top: 24px; padding-bottom: 40px; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
@@ -162,6 +169,14 @@
     <div class="warnbox">TalonHive will never ask for your seed phrase or keys. Mining uses separate <b>Mining Keys</b> that you can revoke in your wallet at any time.</div>
   </section>
 </main>
+<dialog id="m-dialog" aria-labelledby="md-title">
+  <div class="md-step" id="md-step"></div>
+  <h3 id="md-title"></h3>
+  <p id="md-body"></p>
+  <ol class="md-list" id="md-list" hidden></ol>
+  <button class="btn" id="md-ok"></button>
+  <button class="linkish" id="md-later">Not now</button>
+</dialog>
 <footer>TalonHive Hub · open source at github.com/talonhive/hub · part of TalonHive (see also TalonHive Swap).</footer>
 <script type="module" src="./app.js"></script>
 </body>

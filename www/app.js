@@ -99,26 +99,53 @@ function renderMining() {
 
 const errText = (e) => { const t = (e && e.message) || String(e); return t.length > 160 ? t.slice(0, 160) + "…" : t; };
 
+// Guided setup: the wallet opens twice (connect, then allow mining), which surprises new users, so each step is
+// introduced and confirmed with a pop-up. Resolves true for the main button, false for "Not now".
+function ask({ step, title, body, list, ok, later = "Not now" }) {
+  const dlg = $("#m-dialog");
+  if (typeof dlg.showModal !== "function") return Promise.resolve(window.confirm(`${title}
+
+${body}`));
+  $("#md-step").textContent = step; $("#md-title").textContent = title; $("#md-body").textContent = body;
+  const ol = $("#md-list"); ol.textContent = ""; ol.hidden = !list;
+  (list || []).forEach(([b, t]) => { const li = document.createElement("li"); const bb = document.createElement("b"); bb.textContent = b; li.append(bb, " " + t); ol.append(li); });
+  $("#md-ok").textContent = ok; $("#md-later").textContent = later;
+  return new Promise((resolve) => {
+    const done = (v) => { dlg.onclose = null; if (dlg.open) dlg.close(); resolve(v); };
+    $("#md-ok").onclick = () => done(true);
+    $("#md-later").onclick = () => done(false);
+    dlg.onclose = () => done(false);   // Back button / Esc
+    dlg.showModal();
+  });
+}
+
 async function doConnect() {
   const run = ++connectRun;
   busy = true; connecting = true; renderMining();
   say("Opening a connection…");
   try {
     await bee.connectWallet((link) => { showLink(link); say("Tap Open Acki Nacki Wallet below and approve TalonHive Hub, then come back here."); });
-    say("Wallet connected.");
+    say("Wallet connected. One more approval: tap Allow mining.");
   } catch (e) {
     if (errText(e) !== "cancelled") say(`Couldn't connect: ${errText(e)}. Try again.`);
   } finally { if (run === connectRun) { busy = false; connecting = false; showLink(null); renderMining(); } }
+  if (run === connectRun && bee.connection() && await ask({ step: "Step 1 of 2 done", title: "Wallet connected ✓",
+    body: "One more approval and you're ready. Your wallet opens once more to allow mining with separate Mining Keys.",
+    ok: "Allow mining (2 of 2)" })) doAllow();
 }
 
 async function doAllow() {
   busy = true; renderMining();
-  say("Asking your wallet to allow mining…");
+  say("Preparing your Mining Keys…");
   try {
     await bee.allowMining((link) => showLink(link), (t) => say(t));
     say("Mining Keys are live. You're ready to mine!");
   } catch (e) { say(`Mining Keys not confirmed: ${errText(e)}. Try Allow mining again.`); }
   finally { busy = false; showLink(null); renderMining(); }
+  const k = bee.miningKeys();
+  if (k && k.ready && !mining && await ask({ step: "All set", title: "Mining is ready ✓",
+    body: "Start mining and walk with the app open. Each verified step is mined, up to 10,000 steps a day.",
+    ok: "Start mining" })) startMiningUi();
 }
 
 function onBee(ev) {
@@ -161,7 +188,13 @@ $("#m-start").addEventListener("click", () => {
   const conn = bee.connection(), keys = bee.miningKeys();
   if (connecting) { bee.cancelConnect(); connectRun++; connecting = false; busy = false; showLink(null); renderMining(); say("Cancelled."); }
   else if (mining) stopMiningUi();
-  else if (!conn) doConnect();
+  else if (!conn) {
+    ask({ step: "Set up mining", title: "Two quick approvals in your wallet",
+      body: "Your Acki Nacki Wallet will open twice. Approve both, then come back here each time:",
+      list: [["1. Connect:", "lets TalonHive Hub see your wallet name. No coins move."],
+        ["2. Allow mining:", "creates Mining Keys that can only mine. You can revoke them in the wallet anytime."]],
+      ok: "Connect wallet (1 of 2)" }).then((go) => { if (go) doConnect(); });
+  }
   else if (!keys || !keys.ready) doAllow();
   else startMiningUi();
 });

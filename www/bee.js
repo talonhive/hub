@@ -96,7 +96,6 @@ export async function allowMining(onLink, onStatus) {
   const rec = { appId: APP, walletName: conn.walletName, ownerPublic: gen.public, ownerSecret: gen.secret, minerAddress: null, ready: false };
   store.set("keys", rec);
   onLink(gen.deep_link);   // fallback: opens the approval straight in the wallet if its prompt didn't appear
-  onStatus("Approve Mining Keys in your Acki Nacki Wallet…");
   return waitKeysReady(sdk, rec, onStatus);
 }
 
@@ -110,7 +109,7 @@ export async function resumeKeys(onStatus) {
 async function waitKeysReady(sdk, rec, onStatus) {
   rec.minerAddress = await retrying(() => sdk.get_miner_address_by_wallet_name({ client_config: CLIENT, wallet_name: rec.walletName }));
   store.set("keys", rec);
-  onStatus("Waiting for the network to confirm your Mining Keys…");
+  onStatus("Tap Open Acki Nacki Wallet below and approve Mining Keys, then come back here. Waiting for confirmation…");
   await retrying(() => sdk.ensure_mining_keys_propagated({
     client_config: CLIENT, miner_address: rec.minerAddress, app_id: APP, expected_owner_public: rec.ownerPublic,
     max_attempts: 150, interval_ms: 2000,
