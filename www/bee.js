@@ -137,8 +137,15 @@ let miner = null, on = false, computing = false, loop = null, taps = 0, onEvent 
 const log = [];
 let tapsLogged = 0, consoleHooked = false;
 function logLine(line) {
-  log.push(`${new Date().toISOString().slice(11, 19)} ${String(line).slice(0, 600)}`);
+  log.push(`${new Date().toISOString().slice(11, 19)} ${String(line).slice(0, 4000)}`);
   if (log.length > 400) log.shift();
+}
+// The whole error, including the node's reason (SDK errors carry it beyond the first line).
+function fullError(e) {
+  if (!e) return String(e);
+  let t = e.message || String(e);
+  try { if (e.data) t += " | data " + JSON.stringify(e.data); } catch { /* not serialisable */ }
+  return t;
 }
 function hookConsole() {
   if (consoleHooked) return;
@@ -159,7 +166,8 @@ async function getMiner() {
   const k = miningKeys();
   if (!k || !k.ready) throw new Error("Mining Keys are not ready yet.");
   const sdk = await loadSdk();
-  miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret));
+  try { miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret)); }
+  catch (e) { logLine("Miner.new error " + fullError(e)); throw e; }
   logLine(`Miner.new ok (${k.minerAddress})`);
   return miner;
 }
@@ -217,7 +225,7 @@ export function addSteps(n, cadence) {
 export async function collectRewards() {
   const m = await getMiner();
   try { await retrying(() => m.get_reward()); logLine("get_reward ok"); }
-  catch (e) { logLine("get_reward error " + (e.message || e)); throw e; }
+  catch (e) { logLine("get_reward error " + fullError(e)); throw e; }
 }
 
 /** On-chain activity counters of the miner ({ tapSum, tapSum5m }) or null. */
