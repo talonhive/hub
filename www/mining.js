@@ -60,7 +60,7 @@ export const STAGES = [
   { id: "app",    title: "TalonHive Hub approved by Acki Nacki", hint: "Waiting for our Bee Engine app id. Nothing for you to do." },
   { id: "wallet", title: "Connect your Acki Nacki Wallet",        hint: "Tap Connect wallet, then approve TalonHive Hub in the wallet. We never see your seed phrase." },
   { id: "keys",   title: "Allow mining",                          hint: "Approve Mining Keys in your wallet. They can only mine, and you can revoke them in the wallet at any time." },
-  { id: "walk",   title: "Mine while you walk",                   hint: "Each verified step is sent to Bee Engine as mining activity." },
+  { id: "walk",   title: "Mine while you walk",                   hint: "Verified steps are mined in rounds of activity. Steps between rounds still count for today." },
 ];
 
 /**

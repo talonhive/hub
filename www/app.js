@@ -27,7 +27,7 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
 function addToday(n) {
   const t = store.get("today", { day: todayKey(), steps: 0 });
   if (t.day !== todayKey()) { t.day = todayKey(); t.steps = 0; }
-  if (bee.isMining()) mineSteps(n);
+  if (bee.isMining()) { walkedMining += n; mineSteps(n); }
   t.steps += n; store.set("today", t); renderToday(t.steps); renderMining();
 }
 function renderToday(n) {
@@ -40,6 +40,7 @@ renderToday(todaySteps());
 // ---- mining panel ----
 // Setup (wallet, Mining Keys) and sessions are in bee.js. Mining runs only during a walk; each verified step
 // becomes one Bee Engine tap, up to the daily cap.
+let walkedMining = 0;   // steps walked while mining was on (mined or not)
 let mining = false, busy = false, connecting = false, connectRun = 0, minedNow = 0, sessions = 0, accepted = 0, rejected = 0, chainTaps = null;
 let note = "";   // last explicit message (result or error); shown instead of the default hint until the next action
 const say = (t) => { note = t; $("#m-reason").textContent = t; };
@@ -87,6 +88,7 @@ function renderMining() {
   if (!busy && !mining) $("#m-reason").textContent = note || m.reason;
   $("#m-stats").hidden = !(keys && keys.ready);
   $("#ms-taps").textContent = minedNow.toLocaleString("en-US");
+  $("#ms-taps-of").textContent = walkedMining ? `of ${walkedMining.toLocaleString("en-US")} walked` : "steps mined";
   $("#ms-sessions").textContent = `${accepted}/${sessions}`;
   $("#ms-chain").textContent = chainTaps == null ? "–" : Number(chainTaps).toLocaleString("en-US");
   $("#m-collect").hidden = !(keys && keys.ready);
@@ -149,9 +151,12 @@ async function doAllow() {
     ok: "Start mining" })) startMiningUi();
 }
 
+const WAITING_ROUND = "Round sent. Waiting for the next mining round: the network issues them every few minutes. Steps you walk meanwhile still count for today, but aren't mined.";
 function onBee(ev) {
-  if (ev.type === "status" && ev.status === "computing") { sessions++; say("Mining. Keep walking with the app open."); }
-  if (ev.type === "status" && ev.status === "submitting") say("Sending your mining session to the network…");
+  // Rounds: the miner works in short rounds and needs a fresh seed from the network for each, so there are gaps.
+  // Say so plainly: steps walked in a gap still count for the day but are not mined.
+  if (ev.type === "status" && ev.status === "computing") { sessions++; say("Mining round running: your steps are being mined."); }
+  if (ev.type === "status" && ev.status === "submitting") say(WAITING_ROUND);
   if (ev.type === "session_accepted") { accepted++; say("Mining round accepted by the network. Keep walking!"); refreshChain(); }
   if (ev.type === "session_rejected") { rejected++; say("The network rejected a mining round (it happens if a round had too little walking). Keep going."); }
   if (ev.type === "error") say(`Mining note: ${ev.message.slice(0, 140)}`);
@@ -165,7 +170,7 @@ async function startMiningUi() {
     mining = true;
     if (!walking) await start();
     if (SC) SC.keepAwake({ on: true }).catch(() => {});
-    say("Mining. Keep walking with the app open.");
+    say("Starting a mining round… (if the network has no round ready yet, this can take a few minutes)");
   } catch (e) { bee.stopMining(); mining = false; say(`Couldn't start mining: ${errText(e)}`); }
   finally { busy = false; renderMining(); }
 }
@@ -174,7 +179,9 @@ function stopMiningUi(msg) {
   bee.stopMining(); mining = false;
   if (SC && nativeOn) SC.keepAwake({ on: false }).catch(() => {});
   renderMining();
-  say(msg || `Mining stopped. ${minedNow.toLocaleString("en-US")} steps mined this time.`);
+  say(msg || (walkedMining > minedNow
+    ? `Mining stopped. ${minedNow.toLocaleString("en-US")} of ${walkedMining.toLocaleString("en-US")} steps were mined; the rest fell between mining rounds.`
+    : `Mining stopped. ${minedNow.toLocaleString("en-US")} steps mined this time.`));
   refreshChain();
 }
 async function refreshChain() {
@@ -221,7 +228,7 @@ $("#m-log").addEventListener("click", async () => {
   }
 });
 $("#m-disconnect").addEventListener("click", () => {
-  stopMiningUi(); bee.disconnect(); minedNow = 0; sessions = 0; accepted = 0; rejected = 0; chainTaps = null;
+  stopMiningUi(); bee.disconnect(); minedNow = 0; walkedMining = 0; sessions = 0; accepted = 0; rejected = 0; chainTaps = null;
   renderMining();
   say("Disconnected on this phone. To fully revoke the Mining Keys, remove them in your Acki Nacki Wallet.");
 });
