@@ -51,18 +51,22 @@ export const miningKeys = () => {
 };
 
 // The network API sometimes answers "502 Bad Gateway" (seen on mainnet ~half the time), which the SDK reports
-// as an error. Retry through those blips until a deadline instead of failing the whole step.
+// as an error. READ calls are retried through those blips until a deadline. Calls that SEND a message are not:
+// a send can reach the node even when the reply fails, and an identical resend is then refused as
+// DUPLICATE_MESSAGE. retryIf limits retries to errors that happened before anything was sent.
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function retrying(fn, { untilMs = 30000, everyMs = 2000, stillWanted = () => true } = {}) {
+async function retrying(fn, { untilMs = 30000, everyMs = 2000, stillWanted = () => true, retryIf = () => true } = {}) {
   const deadline = Date.now() + untilMs;
   for (;;) {
     try { return await fn(); } catch (e) {
       if (!stillWanted()) throw new Error("cancelled");
-      if (Date.now() + everyMs > deadline) throw e;
+      if (!retryIf(e) || Date.now() + everyMs > deadline) throw e;
       await sleep(everyMs);
     }
   }
 }
+// Miner.new first reads the miner (safe to retry); only then may it send "cancel stale session".
+const failedBeforeSending = (e) => /Get miner details/.test(String((e && e.message) || e));
 
 let connectToken = 0;
 /** Step 1: connect the wallet. onLink(deepLink) is called first, so the page can show "Open wallet". */
@@ -91,7 +95,7 @@ export async function allowMining(onLink, onStatus) {
   if (!conn) throw new Error("Connect your wallet first.");
   const gen = await sdk.gen_mining_keys(APP);
   const bc = new sdk.BeeConnect();
-  const req = await retrying(() => bc.request_set_mining_keys(EP, conn.sessionId, conn.description, conn.sessionStateJson, APP, gen.public, 30, 1000));
+  const req = await bc.request_set_mining_keys(EP, conn.sessionId, conn.description, conn.sessionStateJson, APP, gen.public, 30, 1000);   // sends: no retry
   if (req.updated_session_state_json) { conn.sessionStateJson = req.updated_session_state_json; store.set("conn", conn); }
   const rec = { appId: APP, walletName: conn.walletName, ownerPublic: gen.public, ownerSecret: gen.secret, minerAddress: null, ready: false };
   store.set("keys", rec);
@@ -166,7 +170,7 @@ async function getMiner() {
   const k = miningKeys();
   if (!k || !k.ready) throw new Error("Mining Keys are not ready yet.");
   const sdk = await loadSdk();
-  try { miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret)); }
+  try { miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret), { retryIf: failedBeforeSending }); }
   catch (e) { logLine("Miner.new error " + fullError(e)); throw e; }
   logLine(`Miner.new ok (${k.minerAddress})`);
   return miner;
@@ -224,7 +228,7 @@ export function addSteps(n, cadence) {
 /** Ask the miner contract to pay out accumulated rewards to the wallet. */
 export async function collectRewards() {
   const m = await getMiner();
-  try { await retrying(() => m.get_reward()); logLine("get_reward ok"); }
+  try { await m.get_reward(); logLine("get_reward ok"); }   // sends: no retry
   catch (e) { logLine("get_reward error " + fullError(e)); throw e; }
 }
 
