@@ -65,8 +65,9 @@ async function retrying(fn, { untilMs = 30000, everyMs = 2000, stillWanted = () 
     }
   }
 }
-// Miner.new first reads the miner (safe to retry); only then may it send "cancel stale session".
-const failedBeforeSending = (e) => /Get miner details/.test(String((e && e.message) || e));
+// Miner.new first reads the miner (safe to retry); only then may it send "cancel stale session". QUEUE_OVERFLOW
+// ("Message queue is full") means the node refused the message without queueing it, so resending is safe too.
+const failedBeforeSending = (e) => /Get miner details|QUEUE_OVERFLOW|Message queue is full/.test(fullError(e));
 
 let connectToken = 0;
 /** Step 1: connect the wallet. onLink(deepLink) is called first, so the page can show "Open wallet". */
