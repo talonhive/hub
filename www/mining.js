@@ -8,7 +8,8 @@ export const MINING = {
   dailyStepCap: 10000,    // steps per day that can be mined; walking more is fine, it just doesn't add more
   maxStepsPerMin: 200,    // fastest real walking/running cadence; faster bursts (e.g. a batch of steps from the
   burstSteps: 30,         //   hardware counter after the app was closed) are not mined. burst = short catch-up allowance
-  sessionMs: 30000,       // one Bee Engine session; sessions run back to back while you walk
+  sessionMs: 15000,       // one Bee Engine session (GOSH's example uses 15 s); sessions run back to back while you walk
+  maxTapsPerSession: 30,  // each tap is a high-difficulty hash (Bee Engine docs): don't queue more than a phone computes
 };
 
 // Networks. The public Hub uses Shellnet; opening it with ?net=mainnet switches THIS device to mainnet

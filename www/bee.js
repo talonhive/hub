@@ -135,6 +135,7 @@ export function disconnect() {
 // While mining is on, Bee Engine sessions (MINING.sessionMs each) run back to back. Each verified step becomes
 // one tap in the running session. Steps between sessions (a second or two) are not mined.
 let miner = null, on = false, computing = false, loop = null, taps = 0, onEvent = () => {};
+let roundSent = 0, roundDone = 0;   // taps sent / computed in the current session (logged when it ends)
 
 // Support log: raw miner callbacks and SDK console errors (no keys, no session secrets), so problems can be
 // reported to GOSH exactly as the SDK says them. Kept in memory only; copied by the user from the panel.
@@ -179,11 +180,13 @@ async function getMiner() {
 function onMinerMessage(msg) {
   let p = null;
   try { p = JSON.parse(msg); } catch { logLine("callback (not JSON) " + msg); return; }
-  if (p.action !== "tap_computed") logLine("callback " + msg);   // per-tap callbacks are only counted
+  if (p.action === "tap_computed") roundDone++;
+  else logLine("callback " + msg);   // per-tap callbacks are only counted
   if (p.error) onEvent({ type: "error", message: String(p.error) });
   if (p.action === "status_updated" && p.data && p.data.status) {
     const st = p.data.status;
-    if (st === "computing") computing = true;
+    if (st === "computing") { computing = true; roundSent = 0; roundDone = 0; }
+    if (st === "submitting") logLine(`round taps: ${roundSent} sent, ${roundDone} computed`);
     if (st === "submitting" || st === "finished" || st === "removed") computing = false;
     onEvent({ type: "status", status: st });
   } else if (p.action) {
@@ -214,12 +217,15 @@ export function stopMining() {
 
 export const isMining = () => on;
 
-/** Feed n verified steps as taps. Returns how many were accepted by the running session. */
+/** Feed n verified steps as taps (at most MINING.maxTapsPerSession per session). Returns how many were accepted. */
 export function addSteps(n, cadence) {
   if (!on || !computing || !miner) return 0;
+  const room = Math.max(0, MINING.maxTapsPerSession - roundSent);
   let ok = 0;
-  for (let i = 0; i < n; i++) {
-    try { taps++; miner.add_tap(taps % 1000000, Math.max(0, Math.round(cadence || 0))); ok++; tapsLogged++; }
+  for (let i = 0; i < Math.min(n, room); i++) {
+    // Coordinates are the app's choice (Bee Engine docs); kept small like GOSH's example add_tap(1, 1):
+    // x = step number within the round, y = walking cadence (steps/min), both under 256.
+    try { taps++; miner.add_tap(roundSent + 1, Math.min(255, Math.max(1, Math.round(cadence || 1)))); ok++; roundSent++; tapsLogged++; }
     catch (e) { logLine("add_tap error " + (e.message || e)); break; }
   }
   return ok;
