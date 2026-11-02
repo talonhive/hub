@@ -2,6 +2,13 @@ package io.github.talonhive.hub;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.provider.Settings;
+import androidx.core.content.ContextCompat;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -27,7 +34,10 @@ import com.getcapacitor.annotation.PermissionCallback;
  */
 @CapacitorPlugin(
     name = "StepCounter",
-    permissions = { @Permission(alias = "activity", strings = { Manifest.permission.ACTIVITY_RECOGNITION }) }
+    permissions = {
+        @Permission(alias = "activity", strings = { Manifest.permission.ACTIVITY_RECOGNITION }),
+        @Permission(alias = "notifications", strings = { "android.permission.POST_NOTIFICATIONS" })
+    }
 )
 public class StepCounterPlugin extends Plugin implements SensorEventListener {
     private SensorManager sensorManager;
@@ -103,6 +113,79 @@ public class StepCounterPlugin extends Plugin implements SensorEventListener {
         call.resolve();
     }
 
+    // ---- mining with the screen off (MiningService) ----
+    // While mining runs in the background, a native heartbeat fires a "tick" event every second: browsers slow a
+    // hidden page's own timers (down to once a minute), but events delivered from here still run its code.
+    private final Handler heartbeat = new Handler(Looper.getMainLooper());
+    private final Runnable beat = new Runnable() {
+        @Override public void run() {
+            notifyListeners("tick", new JSObject());
+            heartbeat.postDelayed(this, 1000);
+        }
+    };
+
+    /** Start mining in the background: foreground service (notification + wake lock) and the heartbeat. */
+    @PluginMethod
+    public void startBackground(PluginCall call) {
+        if (permissionMissing()) { call.reject("Physical activity permission not granted"); return; }
+        try {
+            ContextCompat.startForegroundService(getContext(), new Intent(getContext(), MiningService.class));
+        } catch (Exception e) {
+            call.reject("Couldn't start background mining: " + e.getMessage());
+            return;
+        }
+        heartbeat.removeCallbacks(beat);
+        heartbeat.post(beat);
+        getActivity().runOnUiThread(() -> getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void stopBackground(PluginCall call) {
+        heartbeat.removeCallbacks(beat);
+        getContext().stopService(new Intent(getContext(), MiningService.class));
+        call.resolve();
+    }
+
+    /** Android 13+: ask to show the "mining" notification (the service runs either way). */
+    @PluginMethod
+    public void ensureNotifications(PluginCall call) {
+        if (Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED) {
+            JSObject r = new JSObject(); r.put("granted", true); call.resolve(r); return;
+        }
+        requestPermissionForAlias("notifications", call, "onNotifications");
+    }
+
+    @PermissionCallback
+    private void onNotifications(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("granted", getPermissionState("notifications") == PermissionState.GRANTED);
+        call.resolve(r);
+    }
+
+    /** Whether battery optimisation is off for this app (some phones stop background apps otherwise). */
+    @PluginMethod
+    public void batteryStatus(PluginCall call) {
+        PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+        JSObject r = new JSObject();
+        r.put("unrestricted", Build.VERSION.SDK_INT < 23 || (pm != null && pm.isIgnoringBatteryOptimizations(getContext().getPackageName())));
+        call.resolve(r);
+    }
+
+    /** Opens Android's own "allow to run in the background" prompt for this app. */
+    @PluginMethod
+    public void requestUnrestrictedBattery(PluginCall call) {
+        try {
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getContext().getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+        } catch (Exception e) {
+            Intent i = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+        }
+        call.resolve();
+    }
+
     @Override
     public void onSensorChanged(SensorEvent event) {
         lastTotal = (long) event.values[0];
@@ -116,6 +199,8 @@ public class StepCounterPlugin extends Plugin implements SensorEventListener {
 
     @Override
     protected void handleOnDestroy() {
+        heartbeat.removeCallbacks(beat);
         if (listening && sensorManager != null) sensorManager.unregisterListener(this);
+        getContext().stopService(new Intent(getContext(), MiningService.class));
     }
 }

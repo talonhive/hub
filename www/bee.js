@@ -230,12 +230,18 @@ export async function startMining(listener) {
     catch (e) { logLine("start error " + (e.message || e)); onEvent({ type: "error", message: e.message || String(e) }); }
   };
   tick();
+  tickFn = tick;
   clearInterval(loop);
   loop = setInterval(tick, 1000);
 }
 
+// With the screen off (APK background mining) the page's own timers are slowed, so the app also calls this from
+// the native once-a-second heartbeat. Starting a round twice is impossible: tick() checks computing/can_start.
+let tickFn = null;
+export function tickNow() { if (tickFn) tickFn(); }
+
 export function stopMining() {
-  on = false; computing = false;
+  on = false; computing = false; tickFn = null;
   clearInterval(loop); loop = null;
   try { miner?.stop(); } catch { /* not running */ }
 }

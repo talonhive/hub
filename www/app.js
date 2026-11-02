@@ -186,18 +186,46 @@ async function startMiningUi() {
     await bee.startMining(onBee);
     mining = true;
     if (!walking) await start();
-    if (SC) SC.keepAwake({ on: true }).catch(() => {});
-    say("Starting a mining round… (if the network has no round ready yet, this can take a few minutes)");
+    const background = await backgroundMining(true);
+    if (!background && SC) SC.keepAwake({ on: true }).catch(() => {});
+    say(background
+      ? "Mining. You can turn the screen off and put your phone in your pocket: mining continues (see the notification)."
+      : "Starting a mining round… (if the network has no round ready yet, this can take a few minutes)");
   } catch (e) {
     bee.stopMining(); mining = false;
     say(errText(e) === bee.BUSY_MESSAGE ? bee.BUSY_MESSAGE : `Couldn't start mining: ${errText(e)}`);
   }
   finally { busy = false; renderMining(); }
 }
+// APK with the hardware step counter: mine with the screen off. MiningService (notification + wake lock) keeps the
+// app running, and its once-a-second heartbeat drives the miner, since a hidden page's own timers are slowed.
+// Some phones still stop background apps, so the first time we offer Android's "allow in background" prompt.
+let tickListening = false;
+async function backgroundMining(on) {
+  if (!SC || !nativeOn) return false;
+  try {
+    if (!on) { await SC.stopBackground(); return true; }
+    if (!tickListening) { await SC.addListener("tick", () => bee.tickNow()); tickListening = true; }
+    await SC.ensureNotifications().catch(() => {});
+    const b = await SC.batteryStatus().catch(() => ({ unrestricted: true }));
+    if (!b.unrestricted && !store.get("batteryAsked", false)) {
+      store.set("batteryAsked", true);
+      const yes = await ask({
+        step: "Mining with the screen off", title: "Keep mining in your pocket?",
+        body: "Some phones stop apps in the background to save battery. Allow TalonHive Hub to run in the background so mining continues with the screen off. A notification shows while it mines; stopping mining ends it.",
+        ok: "Allow", later: "Not now",
+      });
+      if (yes) await SC.requestUnrestrictedBattery().catch(() => {});
+    }
+    await SC.startBackground();
+    return true;
+  } catch { return false; }
+}
 function stopMiningUi(msg) {
   if (!mining) return;
   bee.stopMining(); mining = false;
   if (SC && nativeOn) SC.keepAwake({ on: false }).catch(() => {});
+  backgroundMining(false);
   renderMining();
   say(msg || (walkedMining > minedNow
     ? `Mining stopped. ${minedNow.toLocaleString("en-US")} of ${walkedMining.toLocaleString("en-US")} steps were mined; the rest fell between mining rounds.`

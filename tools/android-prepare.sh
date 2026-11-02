@@ -12,10 +12,16 @@ npx cap sync android
 src=android/app/src/main/java/io/github/talonhive/hub
 test -d "$src" || { echo "unexpected project layout:"; find android/app/src/main/java; exit 1; }
 rm -f "$src"/MainActivity.*
-cp android-res/java/MainActivity.java android-res/java/StepCounterPlugin.java "$src/"
+cp android-res/java/MainActivity.java android-res/java/StepCounterPlugin.java android-res/java/MiningService.java "$src/"
 m=android/app/src/main/AndroidManifest.xml
 sed -i 's#<application#<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />\n    <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />\n    <application#' "$m"
 grep -q ACTIVITY_RECOGNITION "$m"
+
+# Mining with the screen off: a foreground service (type "health": hardware step counting) holding a wake lock,
+# its notification, and Android's "allow background" prompt.
+sed -i 's#<application#<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />\n    <application#' "$m"
+sed -i 's#</application>#    <service android:name=".MiningService" android:exported="false" android:foregroundServiceType="health" />\n    </application>#' "$m"
+grep -q 'android:name=".MiningService"' "$m" && grep -q FOREGROUND_SERVICE_HEALTH "$m"
 grep -q "registerPlugin(StepCounterPlugin.class)" "$src/MainActivity.java"
 
 # App icons: the TalonHive mark, white on black
