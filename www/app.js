@@ -155,6 +155,7 @@ const WAITING_ROUND = "Round sent. Waiting for the next mining round: the networ
 function onBee(ev) {
   // Rounds: the miner works in short rounds and needs a fresh seed from the network for each, so there are gaps.
   // Say so plainly: steps walked in a gap still count for the day but are not mined.
+  if (ev.type === "busy") say(`The Acki Nacki network is busy right now. Trying again in ${Math.round(ev.waitMs / 1000)} seconds…`);
   if (ev.type === "status" && ev.status === "computing") { sessions++; say("Mining round running: your steps are being mined."); }
   if (ev.type === "status" && ev.status === "submitting") say(WAITING_ROUND);
   if (ev.type === "session_accepted") { accepted++; say("Mining round accepted by the network. Keep walking!"); refreshChain(); }
@@ -171,7 +172,10 @@ async function startMiningUi() {
     if (!walking) await start();
     if (SC) SC.keepAwake({ on: true }).catch(() => {});
     say("Starting a mining round… (if the network has no round ready yet, this can take a few minutes)");
-  } catch (e) { bee.stopMining(); mining = false; say(`Couldn't start mining: ${errText(e)}`); }
+  } catch (e) {
+    bee.stopMining(); mining = false;
+    say(errText(e) === bee.BUSY_MESSAGE ? bee.BUSY_MESSAGE : `Couldn't start mining: ${errText(e)}`);
+  }
   finally { busy = false; renderMining(); }
 }
 function stopMiningUi(msg) {

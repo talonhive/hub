@@ -166,16 +166,40 @@ export function miningLog() {
     `taps sent this page load: ${tapsLogged}`, ``, ...log].join(String.fromCharCode(10));
 }
 
-async function getMiner() {
+// Mainnet's miner message queue is often full (QUEUE_OVERFLOW) or slow to answer (timeout). Miner.new may send
+// "cancel stale session", so it runs once at a time (minerP: a second caller waits for the first instead of sending
+// its own) and retries patiently: 20 s after a full queue, 30 s after a timeout. Every attempt starts by re-reading
+// the miner, so if an earlier cancel did land, the next attempt has nothing to cancel and sends nothing.
+const isBusy = (e) => /QUEUE_OVERFLOW|Message queue is full/.test(fullError(e));
+const isTimeout = (e) => /fetch operation timeout|timed? ?out/i.test(fullError(e));
+export const BUSY_MESSAGE = "The Acki Nacki network is busy right now (its message queue is full). Please try again in a few minutes.";
+let minerP = null;
+async function getMiner(onWait = () => {}) {
   if (miner) return miner;
-  hookConsole();
-  const k = miningKeys();
-  if (!k || !k.ready) throw new Error("Mining Keys are not ready yet.");
-  const sdk = await loadSdk();
-  try { miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret), { retryIf: failedBeforeSending }); }
-  catch (e) { logLine("Miner.new error " + fullError(e)); throw e; }
-  logLine(`Miner.new ok (${k.minerAddress})`);
-  return miner;
+  if (!minerP) {
+    minerP = (async () => {
+      hookConsole();
+      const k = miningKeys();
+      if (!k || !k.ready) throw new Error("Mining Keys are not ready yet.");
+      const sdk = await loadSdk();
+      const deadline = Date.now() + 180000;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret), { retryIf: failedBeforeSending, untilMs: 10000 });
+          logLine(`Miner.new ok (${k.minerAddress})`);
+          return miner;
+        } catch (e) {
+          logLine(`Miner.new error (attempt ${attempt}) ` + fullError(e));
+          const wait = isBusy(e) ? 20000 : isTimeout(e) ? 30000 : 0;
+          if (!wait || Date.now() + wait > deadline) throw isBusy(e) || isTimeout(e) ? new Error(BUSY_MESSAGE) : e;
+          onWait(wait);
+          await sleep(wait);
+        }
+      }
+    })();
+    minerP.catch(() => {}).finally(() => { minerP = null; });
+  }
+  return minerP;
 }
 
 function onMinerMessage(msg) {
@@ -198,7 +222,7 @@ function onMinerMessage(msg) {
 /** Turn mining on. listener({type, ...}) gets session events. */
 export async function startMining(listener) {
   onEvent = listener || (() => {});
-  const m = await getMiner();
+  const m = await getMiner((ms) => onEvent({ type: "busy", waitMs: ms }));
   on = true;
   const tick = () => {
     if (!on || computing) return;
@@ -242,7 +266,9 @@ export async function collectRewards() {
 /** On-chain activity counters of the miner ({ tapSum, tapSum5m }) or null. */
 export async function minerStats() {
   try {
-    const m = await getMiner();
+    // Read-only: never set up the miner just to show stats (that can send "cancel stale session").
+    const m = miner || (minerP && await minerP);
+    if (!m) return null;
     const d = await retrying(() => m.get_miner_data(), { untilMs: 15000 });
     const r = { tapSum: d.tap_sum.toString(), tapSum5m: d.tap_sum_5m.toString() };
     d.free();
