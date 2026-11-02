@@ -65,7 +65,9 @@ jobs:
           **TalonHive Hub ${GITHUB_REF_NAME}** (test network preview)
 
           Walk to mine: steps from your phone's hardware step counter, so it works in a pocket with the screen off and offline.
-          Mining switches on once Acki Nacki issues our Bee Engine app id.
+          Mining with Acki Nacki's Bee Engine: connect your Acki Nacki Wallet, allow mining (separate Mining Keys you can
+          revoke in the wallet), then mine while you walk. Mining runs while the app is open; the screen stays on while mining.
+          Rewards need your wallet's ecosystem participation activated (see Acki Nacki's Ludo, Batteries or Popits apps).
 
           **Install:** download the .apk below on your Android phone, open it and allow installing from this source.
           **Verify:** the APK's SHA-256 is in SHA256SUMS.txt; the signing certificate is in SIGNING-CERT.txt and stays the same for every release.

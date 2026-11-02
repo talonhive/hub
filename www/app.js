@@ -16,6 +16,22 @@ if (bee.NET.real) {
   const bar = $("#netbar");
   bar.className = "testbar real";
   bar.innerHTML = '<b>MAINNET – real NACKL.</b> Private test mode on this phone. <a href="?net=shellnet">Switch back to test network</a>';
+} else {
+  // The APK has no address bar for ?net=mainnet, so the private mode has a hidden switch that works in both:
+  // tap the test-network banner 7 times within 5 seconds, then confirm. The public default stays Shellnet.
+  let taps = [];
+  $("#netbar").addEventListener("click", async () => {
+    const now = Date.now();
+    taps = [...taps.filter((t) => now - t < 5000), now];
+    if (taps.length < 7) return;
+    taps = [];
+    const yes = await ask({
+      step: "Private test mode", title: "Switch this phone to mainnet?",
+      body: "Mining will use real NACKL with your Acki Nacki Wallet. Only this phone switches; you can switch back from the red banner at any time.",
+      ok: "Use mainnet", later: "Cancel",
+    });
+    if (yes) location.href = "?net=mainnet";
+  });
 }
 
 // Brand mark (white on black).
