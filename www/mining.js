@@ -9,7 +9,7 @@ export const MINING = {
   maxStepsPerMin: 200,    // fastest real walking/running cadence; faster bursts (e.g. a batch of steps from the
   burstSteps: 30,         //   hardware counter after the app was closed) are not mined. burst = short catch-up allowance
   sessionMs: 15000,       // one Bee Engine session (GOSH's example uses 15 s); sessions run back to back while you walk
-  maxTapsPerSession: 30,  // each tap is a high-difficulty hash (Bee Engine docs): don't queue more than a phone computes
+  maxTapsPerSession: 30,  // upper limit; bee.js adapts it to what the phone computes. Each tap is a high-difficulty hash (Bee Engine docs): don't queue more than a phone computes
 };
 
 // Networks. The public Hub uses Shellnet; opening it with ?net=mainnet switches THIS device to mainnet

@@ -137,6 +137,9 @@ export function disconnect() {
 // one tap in the running session. Steps between sessions (a second or two) are not mined.
 let miner = null, on = false, computing = false, loop = null, taps = 0, onEvent = () => {};
 let roundSent = 0, roundDone = 0;   // taps sent / computed in the current session (logged when it ends)
+// Taps the phone can finish in one round: every tap is a high-difficulty hash and unfinished ones are wasted
+// (mainnet 2026-11-02: 23 sent, 11 computed). Starts at the configured limit, then follows what was computed.
+let tapCap = MINING.maxTapsPerSession;
 
 // Support log: raw miner callbacks and SDK console errors (no keys, no session secrets), so problems can be
 // reported to GOSH exactly as the SDK says them. Kept in memory only; copied by the user from the panel.
@@ -207,11 +210,18 @@ function onMinerMessage(msg) {
   try { p = JSON.parse(msg); } catch { logLine("callback (not JSON) " + msg); return; }
   if (p.action === "tap_computed") roundDone++;
   else logLine("callback " + msg);   // per-tap callbacks are only counted
-  if (p.error) onEvent({ type: "error", message: String(p.error) });
+  if (p.error) {
+    const busy = /QUEUE_OVERFLOW|Message queue is full/.test(msg);
+    onEvent({ type: "error", message: busy ? "The network was too busy to take that round (its queue is full). Keep walking: the next rounds try again." : String(p.error) });
+  }
   if (p.action === "status_updated" && p.data && p.data.status) {
     const st = p.data.status;
     if (st === "computing") { computing = true; roundSent = 0; roundDone = 0; }
-    if (st === "submitting") logLine(`round taps: ${roundSent} sent, ${roundDone} computed`);
+    if (st === "submitting") {
+      logLine(`round taps: ${roundSent} sent, ${roundDone} computed`);
+      if (roundSent > roundDone) tapCap = Math.max(4, Math.min(MINING.maxTapsPerSession, roundDone + 2));
+      else if (roundSent >= tapCap) tapCap = Math.min(MINING.maxTapsPerSession, tapCap + 2);
+    }
     if (st === "submitting" || st === "finished" || st === "removed") computing = false;
     onEvent({ type: "status", status: st });
   } else if (p.action) {
@@ -224,8 +234,14 @@ export async function startMining(listener) {
   onEvent = listener || (() => {});
   const m = await getMiner((ms) => onEvent({ type: "busy", waitMs: ms }));
   on = true;
+  let lastWaitLog = Date.now();
   const tick = () => {
     if (!on || computing) return;
+    if (Date.now() - lastWaitLog >= 60000) {
+      lastWaitLog = Date.now();
+      let can = "?"; try { can = String(m.can_start()); } catch { /* reported below */ }
+      logLine(`waiting for a round: can_start=${can}, screen ${typeof document !== "undefined" ? document.visibilityState : "?"}`);
+    }
     try { if (m.can_start()) { logLine(`Miner.start(${MINING.sessionMs})`); m.start(MINING.sessionMs, onMinerMessage); computing = true; } }
     catch (e) { logLine("start error " + (e.message || e)); onEvent({ type: "error", message: e.message || String(e) }); }
   };
@@ -251,7 +267,7 @@ export const isMining = () => on;
 /** Feed n verified steps as taps (at most MINING.maxTapsPerSession per session). Returns how many were accepted. */
 export function addSteps(n, cadence) {
   if (!on || !computing || !miner) return 0;
-  const room = Math.max(0, MINING.maxTapsPerSession - roundSent);
+  const room = Math.max(0, tapCap - roundSent);
   let ok = 0;
   for (let i = 0; i < Math.min(n, room); i++) {
     // Coordinates are the app's choice (Bee Engine docs); kept small like GOSH's example add_tap(1, 1):
