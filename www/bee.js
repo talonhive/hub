@@ -137,6 +137,7 @@ export function disconnect() {
 // one tap in the running session. Steps between sessions (a second or two) are not mined.
 let miner = null, on = false, computing = false, loop = null, taps = 0, onEvent = () => {};
 let roundSent = 0, roundDone = 0;   // taps sent / computed in the current session (logged when it ends)
+let computingWorker = "";           // worker_id of the round taking taps (premine runs two rounds at once)
 // Taps the phone can finish in one round: every tap is a high-difficulty hash and unfinished ones are wasted
 // (mainnet 2026-11-02: 23 sent, 11 computed). Starts at the configured limit, then follows what was computed.
 let tapCap = MINING.maxTapsPerSession;
@@ -190,6 +191,12 @@ async function getMiner(onWait = () => {}) {
         try {
           miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret), { retryIf: failedBeforeSending, untilMs: 10000 });
           logLine(`Miner.new ok (${k.minerAddress})`);
+          // Patched SDK (tools/bee-sdk): resend a refused round summary / proof with the same signed message,
+          // for up to 210 s / 240 s, waiting 2 s then longer (up to 30 s) between tries.
+          if (typeof miner.set_submit_policy === "function") {
+            miner.set_submit_policy(210000, 240000, 2000, 30000);
+            logLine("submit policy: resend round 210 s, proof 240 s, every 2-30 s");
+          }
           return miner;
         } catch (e) {
           logLine(`Miner.new error (attempt ${attempt}) ` + fullError(e));
@@ -210,19 +217,29 @@ function onMinerMessage(msg) {
   try { p = JSON.parse(msg); } catch { logLine("callback (not JSON) " + msg); return; }
   if (p.action === "tap_computed") roundDone++;
   else logLine("callback " + msg);   // per-tap callbacks are only counted
+  if (p.action === "send_attempt" && p.data && p.data.outcome === "ambiguous") {
+    onEvent({ type: "resending", attempt: p.data.attempt, kind: p.data.kind });
+  }
+  if (p.action === "preflight_failed" && /too_few/.test(msg)) {
+    onEvent({ type: "error", message: "That round had too few steps to count (at least 2 per round). Keep walking." });
+    return;
+  }
   if (p.error) {
     const busy = /QUEUE_OVERFLOW|Message queue is full/.test(msg);
     onEvent({ type: "error", message: busy ? "The network was too busy to take that round (its queue is full). Keep walking: the next rounds try again." : String(p.error) });
   }
   if (p.action === "status_updated" && p.data && p.data.status) {
     const st = p.data.status;
-    if (st === "computing") { computing = true; roundSent = 0; roundDone = 0; }
-    if (st === "submitting") {
+    // With premine two rounds overlap: only the round that is computing decides whether taps are taken.
+    const wid = String(p.data.worker_id ?? "");
+    const mine = wid === computingWorker;
+    if (st === "computing") { computing = true; computingWorker = wid; roundSent = 0; roundDone = 0; }
+    if (st === "submitting" && mine) {
       logLine(`round taps: ${roundSent} sent, ${roundDone} computed`);
       if (roundSent > roundDone) tapCap = Math.max(4, Math.min(MINING.maxTapsPerSession, roundDone + 2));
       else if (roundSent >= tapCap) tapCap = Math.min(MINING.maxTapsPerSession, tapCap + 2);
     }
-    if (st === "submitting" || st === "finished" || st === "removed") computing = false;
+    if ((st === "submitting" || st === "finished" || st === "removed") && mine) { computing = false; computingWorker = ""; }
     onEvent({ type: "status", status: st });
   } else if (p.action) {
     onEvent({ type: p.action, data: p.data || null });
@@ -242,7 +259,16 @@ export async function startMining(listener) {
       let can = "?"; try { can = String(m.can_start()); } catch { /* reported below */ }
       logLine(`waiting for a round: can_start=${can}, screen ${typeof document !== "undefined" ? document.visibilityState : "?"}`);
     }
-    try { if (m.can_start()) { logLine(`Miner.start(${MINING.sessionMs})`); m.start(MINING.sessionMs, onMinerMessage); computing = true; } }
+    try {
+      if (m.can_start()) { logLine(`Miner.start(${MINING.sessionMs})`); m.start(MINING.sessionMs, onMinerMessage); computing = true; }
+      else if (typeof m.can_premine === "function" && m.can_premine()) {
+        // Patched SDK: the previous round is still being delivered; mine the next one now, and let it be
+        // sent as soon as the previous one is through (release_submit is safe to call early).
+        logLine(`Miner.premine(${MINING.sessionMs})`);
+        m.premine(MINING.sessionMs, onMinerMessage); computing = true;
+        m.release_submit();
+      }
+    }
     catch (e) { logLine("start error " + (e.message || e)); onEvent({ type: "error", message: e.message || String(e) }); }
   };
   tick();
@@ -257,7 +283,7 @@ let tickFn = null;
 export function tickNow() { if (tickFn) tickFn(); }
 
 export function stopMining() {
-  on = false; computing = false; tickFn = null;
+  on = false; computing = false; computingWorker = ""; tickFn = null;
   clearInterval(loop); loop = null;
   try { miner?.stop(); } catch { /* not running */ }
 }

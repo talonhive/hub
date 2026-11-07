@@ -171,6 +171,7 @@ const WAITING_ROUND = "Round sent. Waiting for the next mining round: the networ
 function onBee(ev) {
   // Rounds: the miner works in short rounds and needs a fresh seed from the network for each, so there are gaps.
   // Say so plainly: steps walked in a gap still count for the day but are not mined.
+  if (ev.type === "resending") say(`The network is busy: sending your ${ev.kind === "proof" ? "round proof" : "round"} again (try ${ev.attempt + 1})…`);
   if (ev.type === "busy") say(`The Acki Nacki network is busy right now. Trying again in ${Math.round(ev.waitMs / 1000)} seconds…`);
   if (ev.type === "status" && ev.status === "computing") { sessions++; say("Mining round running: your steps are being mined."); }
   if (ev.type === "status" && ev.status === "submitting") say(WAITING_ROUND);
