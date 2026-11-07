@@ -3,5 +3,5 @@
 useDefault = true
 
 [allowlist]
-description = "Third-party Bee Engine SDK, vendored unmodified from npm (compiled code, no TalonHive secrets)"
-paths = ['''www/vendor/bee-sdk-[0-9.]+/''']
+description = "Third-party Bee Engine SDK (npm build, and our build from GOSH source + community patches: compiled code, patch files and the pinned Cargo.lock; no TalonHive secrets)"
+paths = ['''www/vendor/bee-sdk-[0-9.]+(-ng)?/''', '''tools/bee-sdk/patches/''', '''tools/bee-sdk/Cargo\.lock''']

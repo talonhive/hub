@@ -9,3 +9,7 @@
 *.py   text eol=lf
 tools/hooks/* text eol=lf
 *.wasm binary
+# Third-party patches and lockfile: keep every byte (SHA-256 pinned in tools/bee-sdk/SHA256SUMS.txt)
+*.patch -text
+tools/bee-sdk/Cargo.lock -text
+tools/bee-sdk/SHA256SUMS.txt -text

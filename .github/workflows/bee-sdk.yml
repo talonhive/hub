@@ -1,0 +1,86 @@
+name: bee-sdk
+# Builds the Bee Engine SDK the Hub ships: GOSH's official v6.0.0 source plus the community patches in
+# tools/bee-sdk/patches (resend-until-delivered, premine, lighter polling; see tools/bee-sdk/README.md),
+# with GOSH's own build script. Every input is pinned: the upstream commit, and each patch and the
+# Cargo.lock by SHA-256. Output: bee_sdk.js + bee_sdk_bg.wasm as a public pre-release with checksums.
+# Run it from the Actions tab ("Run workflow"), or by changing tools/bee-sdk on main.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["tools/bee-sdk/**", ".github/workflows/bee-sdk.yml"]
+
+permissions:
+  contents: write   # publish the build as a pre-release
+
+env:
+  UPSTREAM: https://github.com/gosh-sh/bee-engine.git
+  UPSTREAM_TAG: v6.0.0
+  UPSTREAM_COMMIT: 015bc466613e7b7c41f272dc16ba0cacbf0e4d93
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: inputs match their recorded checksums
+        run: cd tools/bee-sdk && sha256sum -c SHA256SUMS.txt
+
+      - name: toolchain (Rust stable + wasm32, wasm-pack, clang/llvm for blst)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq clang llvm
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+          curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+          rustc --version && wasm-pack --version
+
+      - name: GOSH bee-engine at the pinned commit
+        run: |
+          # some upstream dependencies are listed as ssh:// - those repositories are public over HTTPS
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:" --add
+          git clone --depth 1 --branch "$UPSTREAM_TAG" "$UPSTREAM" upstream
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_COMMIT" || { echo "tag $UPSTREAM_TAG is not $UPSTREAM_COMMIT"; exit 1; }
+
+      - name: apply the patches (file-name order) and the pinned Cargo.lock
+        run: |
+          cd upstream
+          sed -i '/^dodex-sdk = /d' bee_wallet/Cargo.toml   # dev-dependency only, as in upstream CI
+          for p in ../tools/bee-sdk/patches/*.patch; do echo "applying $p"; git apply "$p"; done
+          cp ../tools/bee-sdk/Cargo.lock .
+          git status --short
+
+      - name: build (GOSH's scripts/build_wasm.sh, which also fails on leaked machine paths)
+        env:
+          CC_wasm32_unknown_unknown: clang
+          AR_wasm32_unknown_unknown: llvm-ar
+        run: cd upstream && bash scripts/build_wasm.sh sdk
+
+      - name: collect, checksum and record how it was built
+        run: |
+          mkdir -p dist
+          cp upstream/bee_sdk/pkg/bee_sdk.js upstream/bee_sdk/pkg/bee_sdk_bg.wasm dist/
+          cp upstream/bee_sdk/pkg/bee_sdk.d.ts dist/ 2>/dev/null || true
+          {
+            echo "Bee Engine SDK 6.0.0 + community patches (TalonHive Hub build)"
+            echo "upstream: $UPSTREAM $UPSTREAM_TAG $UPSTREAM_COMMIT"
+            echo "patches:"; (cd tools/bee-sdk && cat SHA256SUMS.txt)
+            echo "built by: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID (commit $GITHUB_SHA)"
+            echo "toolchain: $(rustc --version) | $(wasm-pack --version)"
+          } > dist/BUILDINFO.txt
+          (cd dist && sha256sum bee_sdk.js bee_sdk_bg.wasm > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bee-sdk-6.0.0-ng
+          path: dist/
+
+      - name: publish as a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="bee-sdk-6.0.0-ng.${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" --prerelease \
+            --title "Bee Engine SDK 6.0.0 + patches (build ${GITHUB_RUN_NUMBER})" \
+            --notes "Built from GOSH bee-engine $UPSTREAM_TAG ($UPSTREAM_COMMIT) plus tools/bee-sdk/patches. Not an app release: this is the mining engine the Hub vendors. See BUILDINFO.txt and SHA256SUMS.txt."
