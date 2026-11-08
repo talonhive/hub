@@ -29,7 +29,15 @@ jobs:
       - name: prepare the Android project
         run: bash tools/android-prepare.sh
       - name: build debug APK
-        run: cd android && ./gradlew --no-daemon assembleDebug
+        # Gradle downloads itself and its libraries first; a slow mirror once failed a release (2026-11-08,
+        # "Downloading gradle-8.14.3-all.zip failed: timeout (10000ms)"). Retry the whole build up to 3 times.
+        run: |
+          cd android
+          for i in 1 2 3; do
+            ./gradlew --no-daemon assembleDebug && exit 0
+            echo "Gradle attempt $i failed; retrying in 30 s"; sleep 30
+          done
+          exit 1
       - name: name it and record its checksum
         run: |
           mkdir -p dist

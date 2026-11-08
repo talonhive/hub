@@ -40,7 +40,15 @@ jobs:
           sed -i -E "s/versionCode [0-9]+/versionCode ${GITHUB_RUN_NUMBER}/; s/versionName \"[^\"]*\"/versionName \"${V}\"/" android/app/build.gradle
           grep -E "versionCode|versionName" android/app/build.gradle
       - name: build release APK (unsigned)
-        run: cd android && ./gradlew --no-daemon assembleRelease
+        # Gradle downloads itself and its libraries first; a slow mirror once failed a release (2026-11-08,
+        # "Downloading gradle-8.14.3-all.zip failed: timeout (10000ms)"). Retry the whole build up to 3 times.
+        run: |
+          cd android
+          for i in 1 2 3; do
+            ./gradlew --no-daemon assembleRelease && exit 0
+            echo "Gradle attempt $i failed; retrying in 30 s"; sleep 30
+          done
+          exit 1
       - name: align, sign and verify
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}

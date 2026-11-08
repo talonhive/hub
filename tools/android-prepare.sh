@@ -34,4 +34,8 @@ done
 rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher*.xml
 
 chmod +x android/gradlew
+# The Gradle wrapper gives its own download 10 s by default; allow 2 minutes (a slow mirror failed a release).
+w=android/gradle/wrapper/gradle-wrapper.properties
+if grep -q '^networkTimeout=' "$w"; then sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$w"; else echo "networkTimeout=120000" >> "$w"; fi
+grep -q '^networkTimeout=120000' "$w"
 echo "android project ready"
