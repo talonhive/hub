@@ -138,6 +138,7 @@ export function disconnect() {
 let miner = null, on = false, computing = false, loop = null, taps = 0, onEvent = () => {};
 let roundSent = 0, roundDone = 0;   // taps sent / computed in the current session (logged when it ends)
 let computingWorker = "";           // worker_id of the round taking taps (premine runs two rounds at once)
+let rootsLanding = false;           // the last round summary was delivered; only then is premining worthwhile
 // Taps the phone can finish in one round: every tap is a high-difficulty hash and unfinished ones are wasted
 // (mainnet 2026-11-02: 23 sent, 11 computed). Starts at the configured limit, then follows what was computed.
 let tapCap = MINING.maxTapsPerSession;
@@ -146,8 +147,17 @@ let tapCap = MINING.maxTapsPerSession;
 // reported to GOSH exactly as the SDK says them. Kept in memory only; copied by the user from the panel.
 const log = [];
 let tapsLogged = 0, consoleHooked = false;
+let lastLine = "", lastRepeats = 0;
 function logLine(line) {
-  log.push(`${new Date().toISOString().slice(11, 19)} ${String(line).slice(0, 4000)}`);
+  const text = String(line).slice(0, 4000);
+  const stamp = new Date().toISOString().slice(11, 19);
+  if (text === lastLine && log.length) {   // the same line again: count it instead of repeating it
+    lastRepeats++;
+    log[log.length - 1] = `${stamp} ${text} (x${lastRepeats + 1})`;
+    return;
+  }
+  lastLine = text; lastRepeats = 0;
+  log.push(`${stamp} ${text}`);
   if (log.length > 400) log.shift();
 }
 // The whole error, including the node's reason (SDK errors carry it beyond the first line).
@@ -165,7 +175,7 @@ function hookConsole() {
 }
 export function miningLog() {
   const k = miningKeys();
-  return [`TalonHive Hub mining log`, `bee-sdk 6.0.0 (npm, unmodified) | network ${NET.name} | endpoint ${EP.join(",")}`,
+  return [`TalonHive Hub mining log`, `bee-sdk ${SDK_DIR.includes("-ng") ? "6.0.0 + community patches (tools/bee-sdk)" : "6.0.0 (npm)"} | network ${NET.name} | endpoint ${EP.join(",")}`,
     `app_id ${APP} | miner ${k?.minerAddress || "-"} | wallet ${k?.walletName || "-"} | session ${MINING.sessionMs} ms`,
     `taps sent this page load: ${tapsLogged}`, ``, ...log].join(String.fromCharCode(10));
 }
@@ -217,6 +227,7 @@ function onMinerMessage(msg) {
   try { p = JSON.parse(msg); } catch { logLine("callback (not JSON) " + msg); return; }
   if (p.action === "tap_computed") roundDone++;
   else logLine("callback " + msg);   // per-tap callbacks are only counted
+  if (p.action === "submit_session_root") rootsLanding = !p.error;
   if (p.action === "send_attempt" && p.data && p.data.outcome === "ambiguous") {
     onEvent({ type: "resending", attempt: p.data.attempt, kind: p.data.kind });
   }
@@ -239,7 +250,7 @@ function onMinerMessage(msg) {
       if (roundSent > roundDone) tapCap = Math.max(4, Math.min(MINING.maxTapsPerSession, roundDone + 2));
       else if (roundSent >= tapCap) tapCap = Math.min(MINING.maxTapsPerSession, tapCap + 2);
     }
-    if ((st === "submitting" || st === "finished" || st === "removed") && mine) { computing = false; computingWorker = ""; }
+    if ((st === "submitting" || st === "held" || st === "finished" || st === "removed") && mine) { computing = false; computingWorker = ""; }
     onEvent({ type: "status", status: st });
   } else if (p.action) {
     onEvent({ type: p.action, data: p.data || null });
@@ -261,7 +272,7 @@ export async function startMining(listener) {
     }
     try {
       if (m.can_start()) { logLine(`Miner.start(${MINING.sessionMs})`); m.start(MINING.sessionMs, onMinerMessage); computing = true; }
-      else if (typeof m.can_premine === "function" && m.can_premine()) {
+      else if (rootsLanding && typeof m.can_premine === "function" && m.can_premine()) {
         // Patched SDK: the previous round is still being delivered; mine the next one now, and let it be
         // sent as soon as the previous one is through (release_submit is safe to call early).
         logLine(`Miner.premine(${MINING.sessionMs})`);
@@ -299,7 +310,11 @@ export function addSteps(n, cadence) {
     // Coordinates are the app's choice (Bee Engine docs); kept small like GOSH's example add_tap(1, 1):
     // x = step number within the round, y = walking cadence (steps/min), both under 256.
     try { taps++; miner.add_tap(roundSent + 1, Math.min(255, Math.max(1, Math.round(cadence || 1)))); ok++; roundSent++; tapsLogged++; }
-    catch (e) { logLine("add_tap error " + (e.message || e)); break; }
+    catch (e) {
+      logLine("add_tap error " + (e.message || e));
+      if (/No running workers/.test(String(e.message || e))) { computing = false; computingWorker = ""; }
+      break;
+    }
   }
   return ok;
 }
