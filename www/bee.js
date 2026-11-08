@@ -4,7 +4,7 @@
 // then approves separate Mining Keys that can only mine and can be revoked in the wallet.
 import { MINING, pickNetwork } from "./mining.js";
 
-const SDK_DIR = "./vendor/bee-sdk-6.0.0/";
+const SDK_DIR = "./vendor/bee-sdk-6.0.0-ng/";   // GOSH 6.0.0 + community patches, built by us (tools/bee-sdk)
 // Network: Shellnet unless this device opted into the private mainnet mode (?net=mainnet, see mining.js).
 let savedNet = null;
 try { savedNet = localStorage.getItem("th:net"); } catch { /* private mode */ }

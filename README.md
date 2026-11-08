@@ -71,4 +71,4 @@ this repository's Releases page.**
 ## Licence
 
 TalonHive Hub is licensed under the **GNU AGPL-3.0** (see LICENSE.md), because it bundles Acki Nacki's Bee Engine
-SDK (AGPL-3.0, github.com/gosh-sh/bee-engine), vendored unmodified in `www/vendor/bee-sdk-6.0.0/`.
+SDK (AGPL-3.0, github.com/gosh-sh/bee-engine) v6.0.0 with community patches that resend refused rounds and mine the next round while one is delivered, built from source by our own workflow and vendored in `www/vendor/bee-sdk-6.0.0-ng/` (patches, review and build: `tools/bee-sdk/`).

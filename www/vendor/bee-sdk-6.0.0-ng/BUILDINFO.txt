@@ -1,0 +1,10 @@
+Bee Engine SDK 6.0.0 + community patches (TalonHive Hub build)
+upstream: https://github.com/gosh-sh/bee-engine.git v6.0.0 015bc466613e7b7c41f272dc16ba0cacbf0e4d93
+patches:
+ddfe28cc5c6ef88f7e7751e0f0e5107dfb9557fc6815a3b16ca6aea0a6dc60b0 *patches/0001-newgoblin-delivery-and-diagnostics.patch
+1588582418a7381786be7e683cfe1510e8b3a8a3bc76cc849c06f91f69f428ff *patches/0002-newgoblin-premine.patch
+a6538dcf0f8aa5a43ecef6be79e6552d32230042a5db5704584f7795f17f610c *patches/0003-newgoblin-premine-chain-wait.patch
+24409c27c6972db924700cfe92fa2208aef1a140d234f55e9a27a4a998d472db *patches/0004-neorider-polling-difficulty-benchmark.patch
+5475d5df319aafe8dafbe613f2cb381274d34017a2cdc69868a7ca736e02a7bd *Cargo.lock
+built by: https://github.com/talonhive/hub/actions/runs/42390974234 (commit ba836a35a7ac2510f4190c12cf6b3b9d67733cce)
+toolchain: rustc 1.99.1 (58cf8f9c3 2026-10-13) | wasm-pack 0.13.1
