@@ -194,11 +194,15 @@ async function getMiner(onWait = () => {}) {
     minerP = (async () => {
       hookConsole();
       const k = miningKeys();
-      if (!k || !k.ready) throw new Error("Mining Keys are not ready yet.");
-      const sdk = await loadSdk();
+      if (!k || !k.ready) { logLine("start: Mining Keys are not ready yet (Allow mining first)"); throw new Error("Mining Keys are not ready yet."); }
+      logLine("start: loading the mining engine");
+      let sdk;
+      try { sdk = await loadSdk(); } catch (e) { logLine("start: engine failed to load " + fullError(e)); throw e; }
       const deadline = Date.now() + 180000;
       for (let attempt = 1; ; attempt++) {
         try {
+          // The patched SDK first cancels a leftover round and waits for the chain to confirm: up to ~60 s.
+          logLine(`start: Miner.new (attempt ${attempt}; clearing any leftover round can take up to a minute)`);
           miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret), { retryIf: failedBeforeSending, untilMs: 10000 });
           logLine(`Miner.new ok (${k.minerAddress})`);
           // Patched SDK (tools/bee-sdk): resend a refused round summary / proof with the same signed message,
@@ -260,6 +264,7 @@ function onMinerMessage(msg) {
 /** Turn mining on. listener({type, ...}) gets session events. */
 export async function startMining(listener) {
   onEvent = listener || (() => {});
+  logLine("Start mining tapped");
   const m = await getMiner((ms) => onEvent({ type: "busy", waitMs: ms }));
   on = true;
   let lastWaitLog = Date.now();
