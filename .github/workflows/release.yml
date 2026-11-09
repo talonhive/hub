@@ -32,6 +32,16 @@ jobs:
           KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ] || { echo "Add the 3 signing secrets in Settings -> Secrets and variables -> Actions"; exit 1; }
+      # Keep Gradle and its libraries between runs: a release once failed 3 times downloading Gradle itself
+      # (2026-11-09). Caches saved by builds on main are also readable by release (tag) runs.
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('package.json', 'capacitor.config.json', 'tools/android-prepare.sh') }}
+          restore-keys: gradle-${{ runner.os }}-
       - name: prepare the Android project
         run: bash tools/android-prepare.sh
       - name: version from the tag

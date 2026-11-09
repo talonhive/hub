@@ -26,6 +26,16 @@ jobs:
         run: |
           for f in www/*.js; do node --input-type=module --check < "$f"; done
           node test/stepcore.test.mjs && node test/native-steps.test.mjs && node test/mining.test.mjs
+      # Keep Gradle and its libraries between runs: a release once failed 3 times downloading Gradle itself
+      # (2026-11-09). Caches saved by builds on main are also readable by release (tag) runs.
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('package.json', 'capacitor.config.json', 'tools/android-prepare.sh') }}
+          restore-keys: gradle-${{ runner.os }}-
       - name: prepare the Android project
         run: bash tools/android-prepare.sh
       - name: build debug APK
