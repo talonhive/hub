@@ -205,11 +205,13 @@ async function getMiner(onWait = () => {}) {
           logLine(`start: Miner.new (attempt ${attempt}; clearing any leftover round can take up to a minute)`);
           miner = await retrying(() => sdk.Miner.new(EP, APP, k.minerAddress, k.ownerPublic, k.ownerSecret), { retryIf: failedBeforeSending, untilMs: 10000 });
           logLine(`Miner.new ok (${k.minerAddress})`);
-          // Patched SDK (tools/bee-sdk): resend a refused round summary / proof with the same signed message,
-          // for up to 210 s / 240 s, waiting 2 s then longer (up to 30 s) between tries.
+          // Patched SDK (tools/bee-sdk): resend a refused round summary / proof with the same signed message.
+          // A signed message lives 240 s, so both get its whole life (delivery stops 2 s before expiry), and tries
+          // come every 1.5-8 s: on 2026-11-09 a root got through on its 7th try, but its proof had only 4 tries
+          // (2-30 s apart) before expiring. Resends of the same message are deduplicated by the node.
           if (typeof miner.set_submit_policy === "function") {
-            miner.set_submit_policy(210000, 240000, 2000, 30000);
-            logLine("submit policy: resend round 210 s, proof 240 s, every 2-30 s");
+            miner.set_submit_policy(238000, 238000, 1500, 8000);
+            logLine("submit policy: resend round and proof for 238 s, every 1.5-8 s");
           }
           return miner;
         } catch (e) {
@@ -298,7 +300,8 @@ export async function startMining(listener) {
 let tickFn = null;
 export function tickNow() { if (tickFn) tickFn(); }
 
-export function stopMining() {
+export function stopMining(reason = "") {
+  if (on) logLine(`Mining stopped${reason ? ": " + reason : ""} (a round already being delivered keeps going)`);
   on = false; computing = false; computingWorker = ""; tickFn = null;
   clearInterval(loop); loop = null;
   try { miner?.stop(); } catch { /* not running */ }

@@ -71,7 +71,7 @@ function mineSteps(n) {
   const st = useTaps(r.state, ok);
   store.set("mined", st);
   minedNow += ok;
-  if (st.mined >= MINING.dailyStepCap) stopMiningUi("You've mined today's 10,000 steps. Mining continues tomorrow.");
+  if (st.mined >= MINING.dailyStepCap) stopMiningUi("You've mined today's 10,000 steps. Mining continues tomorrow.", "daily cap reached");
 }
 
 function renderMining() {
@@ -222,9 +222,9 @@ async function backgroundMining(on) {
     return true;
   } catch { return false; }
 }
-function stopMiningUi(msg) {
+function stopMiningUi(msg, reason = "Stop mining tapped") {
   if (!mining) return;
-  bee.stopMining(); mining = false;
+  bee.stopMining(reason); mining = false;
   if (SC && nativeOn) SC.keepAwake({ on: false }).catch(() => {});
   backgroundMining(false);
   renderMining();
@@ -277,7 +277,7 @@ $("#m-log").addEventListener("click", async () => {
   }
 });
 $("#m-disconnect").addEventListener("click", () => {
-  stopMiningUi(); bee.disconnect(); minedNow = 0; walkedMining = 0; sessions = 0; accepted = 0; rejected = 0; chainTaps = null;
+  stopMiningUi(undefined, "wallet disconnected"); bee.disconnect(); minedNow = 0; walkedMining = 0; sessions = 0; accepted = 0; rejected = 0; chainTaps = null;
   renderMining();
   say("Disconnected on this phone. To fully revoke the Mining Keys, remove them in your Acki Nacki Wallet.");
 });
@@ -394,7 +394,7 @@ let gotMotion = false;
 window.addEventListener("devicemotion", (e) => { if (e.accelerationIncludingGravity?.x != null) gotMotion = true; });
 
 function stop() {
-  stopMiningUi();
+  stopMiningUi(undefined, "End walk tapped (ending the walk stops mining)");
   walking = false;
   window.removeEventListener("devicemotion", onMotion);
   clearInterval(timer);
